@@ -53,27 +53,24 @@ int main() {
 	printf("Waiting for a client to connect...\n");
 	client_addr_len = sizeof(client_addr);
 	
-	client_addr_len = accept(server_fd, (struct sockaddr *) &client_addr, &client_addr_len);
+	int connection_fd = accept(server_fd, (struct sockaddr *) &client_addr, &client_addr_len);
 	printf("Client connected\n");
-	memset(buffer, 0, BUFFER_SIZE);
 
-	int bytes_recieved = recv(client_addr_len, buffer, BUFFER_SIZE - 1, 0);
-	if(bytes_recieved < 0)
-	  printf("recieve failed /n");
-	if(bytes_recieved == 0)
-	  printf("Client disconnected");
-    char tmp_buffer [bytes_recieved];
-	int buffer_indx = 0;
-	char * response = "+PONG\r\n";
-	for(int i = 0; i < bytes_recieved; i++){
-		if(*buffer[i] == '\n' || *buffer[i] == '\0'){
-          tmp_buffer[buffer_indx] = '\0';
-          if(strcmp(tmp_buffer, "PONG") == 0)
-		    write(client_addr_len, response, strlen(response));
-		 buffer_indx = 0;	
+	while (1) {
+		char *command_buffer = malloc(20 * sizeof(char));
+		ssize_t bytes_read = read(connection_fd, command_buffer, 20);
+
+		if (bytes_read <= 1) {
+			printf("Read failed: %s \n", strerror(errno));
+			free(command_buffer);
+			close(server_fd);
+			return 1;
 		}
-		else
-		  tmp_buffer[buffer_indx++] = *buffer[i++];
+		printf("Received command: %s\n", command_buffer);
+		free(command_buffer);
+
+		char* PONG = "+PONG\r\n";
+		send(connection_fd, PONG, strlen(PONG), 0);
 	}
 	close(server_fd);
 
