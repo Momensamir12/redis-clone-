@@ -53,26 +53,25 @@ int main() {
 	printf("Waiting for a client to connect...\n");
 	client_addr_len = sizeof(client_addr);
 	
+	int connection_fd = accept(server_fd, (struct sockaddr *) &client_addr, &client_addr_len);
 	printf("Client connected\n");
-	while(1){
-	 int connection_fd = accept(server_fd, (struct sockaddr*)&client_addr, &client_addr_len);	
-     char buffer [BUFFER_SIZE];
-	 ssize_t bytes_read = read(connection_fd, buffer, BUFFER_SIZE - 1);
-	if (bytes_read <= 0) {
-        printf("Client disconnected or error: %s\n", strerror(errno));
-        break;
-    }
-	buffer[bytes_read] = '\0';
-	int pings = 0;
-	char * ptr = buffer;
-	while(ptr = strstr(ptr, "PING")){
-		pings++;
-		ptr+=4;
-	}
-	for(int i = 0; i < pings; i++)
-	  send(connection_fd, "+PONG\r\n", 7, 0);
-	}
 
+	while (1) {
+		char *command_buffer = malloc(20 * sizeof(char));
+		ssize_t bytes_read = read(connection_fd, command_buffer, 20);
+
+		if (bytes_read <= 1) {
+			printf("Read failed: %s \n", strerror(errno));
+			free(command_buffer);
+			close(server_fd);
+			return 1;
+		}
+		printf("Received command: %s\n", command_buffer);
+		free(command_buffer);
+
+		char* PONG = "+PONG\r\n";
+		send(connection_fd, PONG, strlen(PONG), 0);
+	}
 	close(server_fd);
 
 	return 0;
