@@ -69,9 +69,10 @@ int main() {
 		pings++;
 		ptr+=4;
 	}
-	for(int i = 0; i < pings)
+	for(int i = 0; i < pings; i++)
 	  send(connection_fd, "+PONG\r\n", 7, 0);
 	}
+
 	close(server_fd);
 
 	return 0;
