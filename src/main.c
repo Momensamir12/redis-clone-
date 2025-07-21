@@ -54,7 +54,7 @@ int main() {
 	
 	client_addr_len = accept(server_fd, (struct sockaddr *) &client_addr, &client_addr_len);
 	printf("Client connected\n");
-	char * response = "+PONGS\r\n";
+	char * response = "+PONG\r\n";
 	write(client_addr_len, response, strlen(response));
 	
 	close(server_fd);
