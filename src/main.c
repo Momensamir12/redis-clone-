@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <unistd.h>
 
+#define BUFFER_SIZE 1024
 int main() {
 	// Disable output buffering
 	setbuf(stdout, NULL);
@@ -48,15 +49,32 @@ int main() {
 		printf("Listen failed: %s \n", strerror(errno));
 		return 1;
 	}
-	
+	char * buffer[BUFFER_SIZE];
 	printf("Waiting for a client to connect...\n");
 	client_addr_len = sizeof(client_addr);
 	
 	client_addr_len = accept(server_fd, (struct sockaddr *) &client_addr, &client_addr_len);
 	printf("Client connected\n");
+	memset(buffer, 0, BUFFER_SIZE);
+
+	int bytes_recieved = recv(client_addr_len, buffer, BUFFER_SIZE - 1, 0);
+	if(bytes_recieved < 0)
+	  printf("recieve failed /n");
+	if(bytes_recieved == 0)
+	  printf("Client disconnected");
+    char tmp_buffer [bytes_recieved];
+	int buffer_indx = 0;
 	char * response = "+PONG\r\n";
-	write(client_addr_len, response, strlen(response));
-	
+	for(int i = 0; i < bytes_recieved; i++){
+		if(*buffer[i] == '\n' || *buffer[i] == '\0'){
+          tmp_buffer[buffer_indx] = '\0';
+          if(strcmp(tmp_buffer, "PONG") == 0)
+		    write(client_addr_len, response, strlen(response));
+		 buffer_indx = 0;	
+		}
+		else
+		  tmp_buffer[buffer_indx++] = *buffer[i++];
+	}
 	close(server_fd);
 
 	return 0;
