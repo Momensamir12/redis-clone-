@@ -8,9 +8,12 @@
 #include <unistd.h>     
 #include <sys/epoll.h>
 #include "server.h"
+#include <fcntl.h>      
+#include <unistd.h>     
 
 
 #define BUFFER_SIZE 1024
+#define MAX_EVENTS 10
 int main() {
 	// Disable output buffering
 	setbuf(stdout, NULL);
@@ -21,29 +24,51 @@ int main() {
         return 1;
     }
 	printf("Redis listening in port 6379\n");
-    while (1) {  // Outer loop for multiple clients
-    
-    printf("Client connected\n");
+	int epollfd;
+	int server_fd = server->fd;
+	epollfd = epoll_create1(0);
+	struct epoll_event ev;
+	ev.events = EPOLLIN;
+	ev.data.fd = server_fd;
+	epoll_ctl(epollfd, EPOLL_CTL_ADD, server_fd, &ev);
 	struct sockaddr_in client_addr;
+    while (1) { 
+    struct epoll_event events[MAX_EVENTS];		
+    int nfds = epoll_wait(epollfd,&events, MAX_EVENTS, -1);
 
-    while (1) {  // Inner loop for multiple requests from current client
-	    int connection_fd = server_accept_client(server, &client_addr);
-        char *command_buffer = malloc(20 * sizeof(char));
-        ssize_t bytes_read = read(connection_fd, command_buffer, 20);
+       for (int i = 0; i < nfds; i++) {
+        if (events[i].data.fd == server_fd) {
+            // New connection!
+			struct sockaddr_in addr;
+			int client_fd = server_accept_client(server, &addr);
+			if(client_fd >= 0){
+		    int flags = fcntl(client_fd, F_GETFL, 0);
+            fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+            struct epoll_event ev;
+            ev.events = EPOLLIN | EPOLLET;  // Edge-triggered
+            ev.data.fd = client_fd;
+            epoll_ctl(epollfd, EPOLL_CTL_ADD, client_fd, &ev);
+			}
+		}
+		else
+		{
+			char *command_buffer = malloc(20 * sizeof(char));
+			int client_fd = events[i].data.fd;
+			ssize_t bytes_read = read(client_fd, command_buffer, 20);
+			if (bytes_read <= 1)
+			{
+				printf("Read failed: %s \n", strerror(errno));
+				free(command_buffer);
+				close(server_fd);
+				return 1;
+			}
+			printf("Received command: %s\n", command_buffer);
+			free(command_buffer);
 
-        if (bytes_read <= 0) {  // Changed from <= 1 to <= 0
-            printf("Client disconnected\n");
-            free(command_buffer);
-            close(connection_fd);
-            break;  // Break inner loop, go back to accept new client
-        }
-        
-        printf("Received command: %s\n", command_buffer);
-        free(command_buffer);
-
-        char* PONG = "+PONG\r\n";
-        send(connection_fd, PONG, strlen(PONG), 0);
-    }
+			char *PONG = "+PONG\r\n";
+			send(client_fd, PONG, strlen(PONG), 0);
+		}
+	}
 }
 
 	return 0;
