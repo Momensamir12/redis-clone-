@@ -32,9 +32,10 @@ int main() {
 	ev.data.fd = server_fd;
 	epoll_ctl(epollfd, EPOLL_CTL_ADD, server_fd, &ev);
 	struct sockaddr_in client_addr;
+	struct epoll_event events[MAX_EVENTS];		
+
     while (1) { 
-    struct epoll_event events[MAX_EVENTS];		
-    int nfds = epoll_wait(epollfd,&events, MAX_EVENTS, -1);
+    int nfds = epoll_wait(epollfd,events, MAX_EVENTS, -1);
 
        for (int i = 0; i < nfds; i++) {
         if (events[i].data.fd == server_fd) {
