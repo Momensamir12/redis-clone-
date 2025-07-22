@@ -56,12 +56,23 @@ int main() {
 			char *command_buffer = malloc(20 * sizeof(char));
 			int client_fd = events[i].data.fd;
 			ssize_t bytes_read = read(client_fd, command_buffer, 20);
-			if (bytes_read <= 1)
+			if (bytes_read == 0)
+			{ // Client disconnected
+				printf("Client disconnected\n");
+				close(client_fd);									
+				epoll_ctl(epollfd, EPOLL_CTL_DEL, client_fd, NULL); 
+			}
+			else if (bytes_read < 0)
 			{
-				printf("Read failed: %s \n", strerror(errno));
-				free(command_buffer);
-				close(server_fd);
-				return 1;
+				if (errno == EAGAIN || errno == EWOULDBLOCK)
+				{
+				}
+				else
+				{
+					perror("read");
+					close(client_fd);
+					epoll_ctl(epollfd, EPOLL_CTL_DEL, client_fd, NULL);
+				}
 			}
 			printf("Received command: %s\n", command_buffer);
 			free(command_buffer);
@@ -69,8 +80,8 @@ int main() {
 			char *PONG = "+PONG\r\n";
 			send(client_fd, PONG, strlen(PONG), 0);
 		}
+	   }
 	}
-}
 
 	return 0;
 }
