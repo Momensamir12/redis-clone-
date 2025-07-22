@@ -5,74 +5,46 @@
 #include <netinet/ip.h>
 #include <string.h>
 #include <errno.h>
-#include <unistd.h>
+#include <unistd.h>     
+#include <sys/epoll.h>
+#include "server.h"
+
 
 #define BUFFER_SIZE 1024
 int main() {
 	// Disable output buffering
 	setbuf(stdout, NULL);
 	setbuf(stderr, NULL);
-	
-	// You can use print statements as follows for debugging, they'll be visible when running tests.
-	printf("Logs from your program will appear here!\n");
-
-	
-	int server_fd, client_addr_len;
+	server_t *server = server_create(6379);
+	  if (!server) {
+        fprintf(stderr, "Failed to create server\n");
+        return 1;
+    }
+	printf("Redis listening in port 6379\n");
+    while (1) {  // Outer loop for multiple clients
+    
+    printf("Client connected\n");
 	struct sockaddr_in client_addr;
-	
-	server_fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (server_fd == -1) {
-		printf("Socket creation failed: %s...\n", strerror(errno));
-		return 1;
-	}
-	
-	// Since the tester restarts your program quite often, setting SO_REUSEADDR
-	// ensures that we don't run into 'Address already in use' errors
-	int reuse = 1;
-	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-		printf("SO_REUSEADDR failed: %s \n", strerror(errno));
-		return 1;
-	}
-	
-	struct sockaddr_in serv_addr = { .sin_family = AF_INET ,
-									 .sin_port = htons(6379),
-									 .sin_addr = { htonl(INADDR_ANY) },
-									};
-	
-	if (bind(server_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) != 0) {
-		printf("Bind failed: %s \n", strerror(errno));
-		return 1;
-	}
-	
-	int connection_backlog = 5;
-	if (listen(server_fd, connection_backlog) != 0) {
-		printf("Listen failed: %s \n", strerror(errno));
-		return 1;
-	}
-	char * buffer[BUFFER_SIZE];
-	printf("Waiting for a client to connect...\n");
-	client_addr_len = sizeof(client_addr);
-	
-	int connection_fd = accept(server_fd, (struct sockaddr *) &client_addr, &client_addr_len);
-	printf("Client connected\n");
 
-	while (1) {
-		char *command_buffer = malloc(20 * sizeof(char));
-		ssize_t bytes_read = read(connection_fd, command_buffer, 20);
+    while (1) {  // Inner loop for multiple requests from current client
+	    int connection_fd = server_accept_client(server, &client_addr);
+        char *command_buffer = malloc(20 * sizeof(char));
+        ssize_t bytes_read = read(connection_fd, command_buffer, 20);
 
-		if (bytes_read <= 1) {
-			printf("Read failed: %s \n", strerror(errno));
-			free(command_buffer);
-			close(server_fd);
-			return 1;
-		}
-		printf("Received command: %s\n", command_buffer);
-		free(command_buffer);
+        if (bytes_read <= 0) {  // Changed from <= 1 to <= 0
+            printf("Client disconnected\n");
+            free(command_buffer);
+            close(connection_fd);
+            break;  // Break inner loop, go back to accept new client
+        }
+        
+        printf("Received command: %s\n", command_buffer);
+        free(command_buffer);
 
-		char* PONG = "+PONG\r\n";
-		send(connection_fd, PONG, strlen(PONG), 0);
-	}
-	close(server_fd);
+        char* PONG = "+PONG\r\n";
+        send(connection_fd, PONG, strlen(PONG), 0);
+    }
+}
 
 	return 0;
 }
