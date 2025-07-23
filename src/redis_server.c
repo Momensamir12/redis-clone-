@@ -100,7 +100,7 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
     if (events & EPOLLIN) {
         while (1) {  
             ssize_t bytes_read = read(fd, buffer, sizeof(buffer) - 1);
-            prinft("handling a client command \n");
+            printf("handling a client command \n");
             if (bytes_read > 0) {
                 buffer[bytes_read] = '\0';
                 printf("Received from client %d: %s", fd, buffer);
