@@ -105,7 +105,6 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                 buffer[bytes_read] = '\0';
                 printf("Received from client %d: %s", fd, buffer);
                 
-                // Simple PING/PONG response
                 if (strncmp(buffer, "*1\r\n$4\r\nPING\r\n", 14) == 0 || 
                     strncmp(buffer, "PING", 4) == 0) {
                     const char *response = "+PONG\r\n";
