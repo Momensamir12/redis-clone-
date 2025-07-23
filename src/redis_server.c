@@ -119,7 +119,6 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     break;
                 } else {
-                    // Error
                     perror("read");
                     event_loop_remove_fd(loop, fd);
                     close(fd);
