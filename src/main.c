@@ -19,7 +19,6 @@
 static redis_server_t *g_server = NULL;
 
 int main() {
-    // Disable output buffering
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
     
