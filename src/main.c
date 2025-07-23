@@ -10,78 +10,30 @@
 #include "server.h"
 #include <fcntl.h>      
 #include <unistd.h>     
-
+#include "redis_server.h"
 
 #define BUFFER_SIZE 1024
 #define MAX_EVENTS 10
+#define REDIS_DEFAULT_PORT 6379
+
+static redis_server_t *g_server = NULL;
+
 int main() {
-	// Disable output buffering
-	setbuf(stdout, NULL);
-	setbuf(stderr, NULL);
-	server_t *server = server_create(6379);
-	  if (!server) {
-        fprintf(stderr, "Failed to create server\n");
+    // Disable output buffering
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+    
+    g_server = redis_server_create(REDIS_DEFAULT_PORT);
+    if (!g_server) {
+        fprintf(stderr, "Failed to create Redis server\n");
         return 1;
     }
-	printf("Redis listening in port 6379\n");
-	int epollfd;
-	int server_fd = server->fd;
-	epollfd = epoll_create1(0);
-	struct epoll_event ev;
-	ev.events = EPOLLIN;
-	ev.data.fd = server_fd;
-	epoll_ctl(epollfd, EPOLL_CTL_ADD, server_fd, &ev);
-	struct sockaddr_in client_addr;
-	struct epoll_event events[MAX_EVENTS];		
-
-    while (1) { 
-    int nfds = epoll_wait(epollfd,events, MAX_EVENTS, -1);
-
-       for (int i = 0; i < nfds; i++) {
-        if (events[i].data.fd == server_fd) {
-            // New connection!
-			struct sockaddr_in addr;
-			int client_fd = server_accept_client(server, &addr);
-			if(client_fd >= 0){
-		    int flags = fcntl(client_fd, F_GETFL, 0);
-            fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
-            struct epoll_event ev;
-            ev.events = EPOLLIN | EPOLLET;  // Edge-triggered
-            ev.data.fd = client_fd;
-            epoll_ctl(epollfd, EPOLL_CTL_ADD, client_fd, &ev);
-			}
-		}
-		else
-		{
-			char *command_buffer = malloc(20 * sizeof(char));
-			int client_fd = events[i].data.fd;
-			ssize_t bytes_read = read(client_fd, command_buffer, 20);
-			if (bytes_read == 0)
-			{ // Client disconnected
-				printf("Client disconnected\n");
-				close(client_fd);									
-				epoll_ctl(epollfd, EPOLL_CTL_DEL, client_fd, NULL); 
-			}
-			else if (bytes_read < 0)
-			{
-				if (errno == EAGAIN || errno == EWOULDBLOCK)
-				{
-				}
-				else
-				{
-					perror("read");
-					close(client_fd);
-					epoll_ctl(epollfd, EPOLL_CTL_DEL, client_fd, NULL);
-				}
-			}
-			printf("Received command: %s\n", command_buffer);
-			free(command_buffer);
-
-			char *PONG = "+PONG\r\n";
-			send(client_fd, PONG, strlen(PONG), 0);
-		}
-	   }
-	}
-
-	return 0;
+    
+    // Run the event loop (blocks until stopped)
+    redis_server_run(g_server);
+    
+    // Cleanup
+    redis_server_destroy(g_server);
+    
+    return 0;
 }
