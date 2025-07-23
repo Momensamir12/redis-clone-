@@ -117,7 +117,6 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                 break;
             } else {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // No more data to read
                     break;
                 } else {
                     // Error
