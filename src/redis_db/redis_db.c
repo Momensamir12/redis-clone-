@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "redis_db.h"
+#include "../hash_table/hash_table.h"
 
 // Create a new Redis database
 redis_db_t *redis_db_create(int id) {

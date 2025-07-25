@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "type_enums.h"
-#include "hash_table.h"
+#include "../hash_table/hash_table.h"
 
 
 typedef struct redis_object {
