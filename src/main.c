@@ -7,10 +7,9 @@
 #include <errno.h>
 #include <unistd.h>     
 #include <sys/epoll.h>
-#include "server.h"
 #include <fcntl.h>      
 #include <unistd.h>     
-#include "redis_server.h"
+#include "redis_server/redis_server.h"
 
 #define BUFFER_SIZE 1024
 #define MAX_EVENTS 10
