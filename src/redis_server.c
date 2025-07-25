@@ -7,6 +7,9 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <ctype.h>
+#include "redis_command_handler.h"
+
 
 static void handle_server_accept(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void *data);
@@ -104,13 +107,11 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
             if (bytes_read > 0) {
                 buffer[bytes_read] = '\0';
                 printf("Received from client %d: %s", fd, buffer);
+                char * response = handle_command(buffer);
+                send(fd, response, strlen(response), MSG_NOSIGNAL);
+            }
                 
-                if (strncmp(buffer, "*1\r\n$4\r\nPING\r\n", 14) == 0 || 
-                    strncmp(buffer, "PING", 4) == 0) {
-                    const char *response = "+PONG\r\n";
-                    send(fd, response, strlen(response), MSG_NOSIGNAL);
-                }
-            } else if (bytes_read == 0) {
+             else if (bytes_read == 0) {
                 printf("Client %d disconnected\n", fd);
                 event_loop_remove_fd(loop, fd);
                 close(fd);
