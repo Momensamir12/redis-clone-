@@ -24,41 +24,60 @@ char* extract_until_delimiter(resp_buffer_t *resp_buffer) {
     return result;
 }
 
-char *parse_resp_bulk_string(resp_buffer_t *resp_buffer){
-    resp_buffer->pos +=1;
-    char * result;
-    char * len = extract_until_delimiter(resp_buffer);
-    if(!len){
-        free(len);
-        return NULL;
-    }
-    if(isalpha(resp_buffer->buffer[resp_buffer->pos])){
-        result = extract_until_delimiter(resp_buffer);
-        if(!result){
-            free(result);
-            return NULL;
-        }
-        return result;
-    }
-    return NULL;
-}
-
 char *parse_resp_array(resp_buffer_t *resp_buffer)
 {
-  char *result;
-  if(resp_buffer->buffer[resp_buffer->pos] == '*'){
-  resp_buffer->pos += 1;
-  result = extract_until_delimiter(resp_buffer);
-  if(!result){
-    free(result);
-    return NULL;
-  }
-  }
-  if(resp_buffer->buffer[resp_buffer->pos] == '$'){
-     result = parse_resp_bulk_string(resp_buffer); 
-     toLowerCase(result);  
-  }  
- return result;
+    if (!resp_buffer || resp_buffer->pos >= resp_buffer->size) {
+        return NULL;
+    }
+    
+    char *result = NULL;
+    
+    if (resp_buffer->buffer[resp_buffer->pos] == '*') {
+        resp_buffer->pos += 1;
+        result = extract_until_delimiter(resp_buffer);
+        return result;  // Return early for array count
+    }
+    
+    if (resp_buffer->buffer[resp_buffer->pos] == '$') {
+        result = parse_resp_bulk_string(resp_buffer); 
+        if (result) {
+            toLowerCase(result);  
+        }
+    }
+    
+    return result;
+}
+
+char *parse_resp_bulk_string(resp_buffer_t *resp_buffer) {
+    if (resp_buffer->buffer[resp_buffer->pos] != '$') {
+        return NULL;
+    }
+    
+    resp_buffer->pos += 1;  
+    
+    char *len_str = extract_until_delimiter(resp_buffer);
+    if (!len_str) {
+        return NULL;
+    }
+    
+    int len = atoi(len_str);
+    free(len_str);
+    
+    if (resp_buffer->pos + len > resp_buffer->size) {
+        return NULL;  
+    }
+    
+    char *result = malloc(len + 1);
+    if (!result) {
+        return NULL;
+    }
+    
+    memcpy(result, resp_buffer->buffer + resp_buffer->pos, len);
+    result[len] = '\0';
+    
+    resp_buffer->pos += len + 2; 
+    
+    return result;
 }
 
 static void toLowerCase(char *str) {
