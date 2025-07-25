@@ -1,5 +1,5 @@
 #include "redis_server.h"
-#include "server.h"
+#include "../server/server.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <ctype.h>
-#include "redis_command_handler.h"
+#include "../redis_command_handler/redis_command_handler.h"
 
 
 static void handle_server_accept(event_loop_t *loop, int fd, uint32_t events, void *data);

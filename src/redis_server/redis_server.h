@@ -1,8 +1,8 @@
 #ifndef REDIS_SERVER_H
 #define REDIS_SERVER_H
 
-#include "event_loop.h"
-#include "server.h"  // Your existing server_t
+#include "../event_loop/event_loop.h"
+#include "../server/server.h"  
 
 typedef struct redis_server {
     server_t *server;

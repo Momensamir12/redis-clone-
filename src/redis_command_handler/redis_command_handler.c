@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <ctype.h>
-#include "resp_parser.h"
+#include "../resp_praser/resp_parser.h"
 #include "redis_command_handler.h"
 
 char *handle_command(char *buffer)
@@ -58,4 +58,3 @@ char *handle_command(char *buffer)
     return response;
 }
 
-char * hand_set_command ()
