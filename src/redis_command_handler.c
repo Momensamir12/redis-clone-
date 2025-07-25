@@ -26,7 +26,7 @@ char *handle_command (char *buffer)
         return response;
     }
     if(strcmp(command, "ping")){
-        response = encode_bulk_string("PONG");
+        response = encode_simple_string("PONG");
         return response;
     }
     return NULL;
