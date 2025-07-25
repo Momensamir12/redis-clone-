@@ -24,9 +24,8 @@ char *handle_command(char *buffer)
         return NULL;
     }
     int len = atoi(array_count);
-    free(array_count);  // Free the array count string
+    free(array_count); 
     
-    // Parse the command
     char *command = parse_resp_array(resp_buffer);
     if (!command) {
         free(resp_buffer);
@@ -36,14 +35,14 @@ char *handle_command(char *buffer)
     char *response = NULL;
     
     // strcmp returns 0 when equal!
-    if (strcmp(command, "echo") == 0) {  // Fixed comparison
+    if (strcmp(command, "echo") == 0) {  
         char *args = parse_resp_array(resp_buffer);
         if (args) {
             response = encode_bulk_string(args);
             free(args);  // Free the argument
         }
     }
-    else if (strcmp(command, "ping") == 0) {  // Fixed comparison
+    else if (strcmp(command, "ping") == 0) {  
         response = encode_simple_string("PONG");
     }
     else {
@@ -58,3 +57,5 @@ char *handle_command(char *buffer)
     free(resp_buffer);
     return response;
 }
+
+char * hand_set_command ()
