@@ -43,7 +43,7 @@ void hash_table_set (hash_table_t *ht, char *key, void *value)
         entry = entry->next;
     }
     hash_entry_t *new_entry = malloc(sizeof(hash_entry_t));
-    new_entry->key = strdub(key);
+    new_entry->key = strdup(key);
     new_entry->value = value;
     new_entry->next = ht->buckets[index];
     ht->buckets[index] = new_entry;
