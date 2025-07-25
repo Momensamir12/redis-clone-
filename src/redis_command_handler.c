@@ -23,11 +23,14 @@ char *handle_command (char *buffer)
     if(strcmp(command, "echo"))
     {
         response = encode_bulk_string(args);
+        free(resp_buffer);
         return response;
     }
     if(strcmp(command, "ping")){
         response = encode_simple_string("PONG");
+        free(resp_buffer);
         return response;
     }
+    
     return NULL;
 }
