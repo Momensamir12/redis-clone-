@@ -35,18 +35,23 @@ void event_loop_destroy(event_loop_t *event_loop)
     free(event_loop);
 }
 
-int event_loop_add_fd(event_loop_t *event_loop, int fd, uint32_t events,event_handler_t handler, void *data)
+int event_loop_add_fd(event_loop_t *event_loop, int fd, uint32_t events,
+                      event_handler_t handler, void *data)
 {
     struct epoll_event ev;
     ev.data.fd = fd;
     ev.events = events;
+    
     if (epoll_ctl(event_loop->epoll_fd, EPOLL_CTL_ADD, fd, &ev) < 0) {
         return -1;
     }
+    
     event_loop->handlers[fd].handler = handler;
     event_loop->handlers[fd].data = data;
-
+    
+    return 0;  
 }
+
 
 int event_loop_remove_fd(event_loop_t *event_loop, int fd)
 {
@@ -79,8 +84,11 @@ void event_loop_run(event_loop_t *event_loop)
         {
             int fd = event_loop->events[i].data.fd;
             uint32_t events = event_loop->events[i].events;
-            if (fd < MAX_EVENTS && event_loop->handlers[fd].handler)
-                event_loop->handlers[fd].handler(event_loop, fd, events, &event_loop->events[i].data);
+            
+            if (fd < MAX_EVENTS && event_loop->handlers[fd].handler) {
+                event_loop->handlers[fd].handler(event_loop, fd, events, 
+                                                event_loop->handlers[fd].data);  
+            }
         }
     }
 }
