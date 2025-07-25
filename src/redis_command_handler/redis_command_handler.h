@@ -1,7 +1,7 @@
 #ifndef REDIS_COMMAND_HANDLER_H
 #define REDIS_COMMAND_HANDLER_H
 
-#include "resp_parser.h"
+#include "../resp_praser/resp_parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
