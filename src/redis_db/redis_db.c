@@ -98,7 +98,7 @@ void redis_object_destroy(redis_object_t *obj) {
             break;
             
         case REDIS_HASH:
-            hash_table_delete((hash_table_t *)obj->ptr);
+            hash_table_destroy((hash_table_t *)obj->ptr);
             break;
             
         case REDIS_SET:

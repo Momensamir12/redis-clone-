@@ -21,4 +21,5 @@ hash_table_t *hash_table_create (size_t size);
 void hash_table_set (hash_table_t *ht, char *key, void *value);
 void *hash_table_get(hash_table_t *ht, const char *key);
 void hash_table_delete(hash_table_t *ht, const char *key);
+void hash_table_destroy(hash_table_t *ht);
 #endif
