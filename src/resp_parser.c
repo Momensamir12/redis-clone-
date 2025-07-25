@@ -78,3 +78,16 @@ char* encode_bulk_string(const char *str) {
     sprintf(result, "$%d\r\n%s\r\n", len, str);
     return result;
 }
+
+char* encode_simple_string(const char *str) {
+    int len = strlen(str);
+
+    // Allocate memory for '+' + str + "\r\n" + '\0'
+    char *result = malloc(len + 4);  // 1 for '+', 2 for \r\n, 1 for \0
+    if (!result) return NULL;
+
+    // Format: +<string>\r\n
+    sprintf(result, "+%s\r\n", str);
+
+    return result;
+}

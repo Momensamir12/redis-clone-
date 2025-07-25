@@ -33,6 +33,6 @@ typedef struct resp_buffer {
 char *parse_resp_array(resp_buffer_t *buffer);
 char *parse_resp_bulk_string(resp_buffer_t *buffer);
 char *encode_bulk_string(const char *str);
-char* encode_simple_string(const char *str);
+char *encode_simple_string(const char *str);
 
 #endif
