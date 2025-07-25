@@ -43,6 +43,7 @@ void server_destroy(server_t* server) {
 }
 
 int server_accept_client(server_t* server, struct sockaddr_in* client_addr) {
+    printf("accepting client connection \n");
     socklen_t len = sizeof(*client_addr);
     return accept(server->fd, (struct sockaddr*)client_addr, &len);
 }
