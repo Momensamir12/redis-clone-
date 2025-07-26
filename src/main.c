@@ -12,7 +12,6 @@
 #include "redis_server/redis_server.h"
 
 #define BUFFER_SIZE 1024
-#define MAX_EVENTS 10
 #define REDIS_DEFAULT_PORT 6379
 
 static redis_server_t *g_server = NULL;

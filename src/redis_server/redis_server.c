@@ -55,6 +55,8 @@ void redis_server_destroy(redis_server_t *redis) {
     if (redis->server) {
         server_destroy(redis->server);  // Assuming you have this
     }
+    if(redis->db)
+      redis_db_destroy(redis->db);
     
     free(redis);
 }
@@ -99,6 +101,7 @@ static void handle_server_accept(event_loop_t *event_loop, int fd, uint32_t even
 
 static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void *data) {
     char buffer[1024];  
+    redis_server_t *redis = (redis_server_t *)data;
     
     if (events & EPOLLIN) {
         while (1) {  
@@ -107,7 +110,7 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
             if (bytes_read > 0) {
                 buffer[bytes_read] = '\0';
                 printf("Received from client %d: %s", fd, buffer);
-                char * response = handle_command(buffer);
+                char * response = handle_command(redis->db, buffer);
                 send(fd, response, strlen(response), MSG_NOSIGNAL);
             }
                 

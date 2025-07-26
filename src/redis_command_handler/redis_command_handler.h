@@ -9,8 +9,8 @@
 #include <errno.h>
 #include <ctype.h>
 
-char * handle_command (char *buffer);
+char * handle_command (redis_db_t *db, char *buffer);
 void handle_set_command(redis_db_t *db, const char *key, const char *value);
-char* handle_get_command(redis_db_t *db, const char *key)
+char* handle_get_command(redis_db_t *db, const char *key);
 
 #endif
