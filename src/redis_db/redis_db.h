@@ -6,13 +6,14 @@
 #include <string.h>
 #include "type_enums.h"
 #include "../hash_table/hash_table.h"
-
+#include <time.h>
 
 typedef struct redis_object {
     redis_type_t type;     
     void *ptr;              
-    int refcount;           
-    
+    int refcount;
+    long long expiry;
+
 } redis_object_t;
 
 // Redis database structure

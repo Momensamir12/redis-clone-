@@ -7,6 +7,9 @@
 #include "../resp_praser/resp_parser.h"
 #include "redis_command_handler.h"
 #include "../redis_db/redis_db.h"
+#include "../expiry_utils/expiry_utils.h"
+
+#define NULL_RESP_VALUE "$-1\r\n"
 
 char *handle_command(redis_db_t *db, char * buffer)
 {
@@ -49,7 +52,13 @@ char *handle_command(redis_db_t *db, char * buffer)
     else if (strcmp(command, "set") == 0){
         char *key = parse_resp_array(resp_buffer);
         char *value = parse_resp_array(resp_buffer);
-        handle_set_command(db, key, value);
+        if(strcmp(parse_resp_array(resp_buffer), "px") == 0){
+          char * expiry = parse_resp_array(resp_buffer);
+          handle_set_command(db, key, value, expiry);
+        }
+        else{
+        handle_set_command(db, key, value, NULL);
+        }
         response = encode_simple_string("OK");
     }
     else if (strcmp(command, "get") == 0){
@@ -69,22 +78,27 @@ char *handle_command(redis_db_t *db, char * buffer)
     return response;
 }
 
-void handle_set_command(redis_db_t *db, char *key, char *value) {
+void handle_set_command(redis_db_t *db, char *key, char *value, char *expiry) {
     redis_object_t *obj = malloc(sizeof(redis_object_t));
     obj->type = REDIS_STRING;
     obj->ptr = strdup(value);  
-    
+    if(expiry != NULL){
+       set_expiry_ms(obj, atoi(expiry));
+    }
     hash_table_set(db->dict, key, obj);
 }
 
 char* handle_get_command(redis_db_t *db, char *key) {
     void *value = hash_table_get(db->dict, key);
     if (!value) {
-        return encode_bulk_string("-1");  
+        return NULL_RESP_VALUE;  
     }
     
     redis_object_t *obj = (redis_object_t *)value;
-    
+    if(is_expired(obj))
+    {
+        return NULL_RESP_VALUE;
+    }
     if (obj->type != REDIS_STRING) {
         return "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n";
     }
