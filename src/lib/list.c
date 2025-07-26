@@ -125,3 +125,42 @@ void *list_index(redis_list_t *list, int index) {
         return current->data;
     }
 }
+
+char **list_range(redis_list_t *list, int start, int stop, int *count) {
+    if (!list || list->length == 0) {
+        *count = 0;
+        return NULL;
+    }
+    
+    if (start < 0) start = list->length + start;
+    if (stop < 0) stop = list->length + stop;
+    
+    if (start < 0) start = 0;
+    if (stop >= list->length) stop = list->length - 1;
+    
+    if (start > stop || start >= list->length) {
+        *count = 0;
+        return NULL;
+    }
+    
+    int result_count = stop - start + 1;
+    char **result = malloc(sizeof(char*) * result_count);
+    if (!result) {
+        *count = 0;
+        return NULL;
+    }
+    
+    // Find starting node
+    list_node_t *node = list->head;
+    for (int i = 0; i < start; i++) {
+        node = node->next;
+    }
+    
+    for (int i = 0; i < result_count && node; i++) {
+        result[i] = (char *)node->data;  
+        node = node->next;
+    }
+    
+    *count = result_count;
+    return result;
+}

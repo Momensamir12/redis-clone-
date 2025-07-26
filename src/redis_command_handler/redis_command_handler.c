@@ -26,6 +26,7 @@ static redis_command_t commands[] = {
     {"llen",  handle_llen_command,  2,  2},
     {"rpop",  handle_rpop_command,  2,  2},
     {"lpop",  handle_lpop_command,  2,  2},
+    {"lrange", handle_lrange_command, 3, 3},
     {NULL, NULL, 0, 0}  // Sentinel
 };
 
@@ -315,5 +316,37 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     
     char *response = encode_bulk_string(value);
     free(value);
+    return response;
+}
+
+char *handle_lrange_command(redis_db_t *db, char **args, int argc) {
+    if (argc != 4) {
+        return strdup("-ERR wrong number of arguments for 'lrange' command\r\n");
+    }
+    
+    char *key = args[1];
+    int start = atoi(args[2]);
+    int stop = atoi(args[3]);
+    
+    redis_object_t *obj = hash_table_get(db->dict, key);
+    if (!obj) {
+        return strdup("*0\r\n");
+    }
+    
+    if (obj->type != REDIS_LIST) {
+        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+    }
+    
+    redis_list_t *list = (redis_list_t *)obj->ptr;
+    int count;
+    char **values = list_range(list, start, stop, &count);
+    
+    if (!values) {
+        return strdup("*0\r\n");
+    }
+    
+    char *response = encode_resp_array(values, count);
+    free(values);  
+    
     return response;
 }

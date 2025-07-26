@@ -110,3 +110,60 @@ char* encode_simple_string(const char *str) {
 
     return result;
 }
+
+char *encode_resp_array(char **args, int argc) {
+    if (argc <= 0 || !args) {
+        return strdup("*0\r\n");  // Empty array
+    }
+    
+    // First, calculate total size needed
+    size_t total_size = 0;
+    
+    // Array header: *<count>\r\n
+    char count_str[32];
+    int count_len = sprintf(count_str, "*%d\r\n", argc);
+    total_size += count_len;
+    
+    // Calculate size for each element (as bulk strings)
+    for (int i = 0; i < argc; i++) {
+        if (args[i] == NULL) {
+            total_size += 5;  // "$-1\r\n" for null
+        } else {
+            size_t len = strlen(args[i]);
+            // $<len>\r\n<data>\r\n
+            char len_str[32];
+            int len_size = sprintf(len_str, "%zu", len);
+            total_size += 1 + len_size + 2 + len + 2;  // $ + len + \r\n + data + \r\n
+        }
+    }
+    
+    // Allocate result buffer
+    char *result = malloc(total_size + 1);  // +1 for null terminator
+    if (!result) return NULL;
+    
+    // Build the response
+    char *pos = result;
+    
+    // Write array header
+    memcpy(pos, count_str, count_len);
+    pos += count_len;
+    
+    // Write each element as bulk string
+    for (int i = 0; i < argc; i++) {
+        if (args[i] == NULL) {
+            memcpy(pos, "$-1\r\n", 5);
+            pos += 5;
+        } else {
+            size_t len = strlen(args[i]);
+            int written = sprintf(pos, "$%zu\r\n", len);
+            pos += written;
+            memcpy(pos, args[i], len);
+            pos += len;
+            memcpy(pos, "\r\n", 2);
+            pos += 2;
+        }
+    }
+    
+    *pos = '\0';  // Null terminate
+    return result;
+}
