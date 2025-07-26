@@ -77,8 +77,8 @@ void hash_table_delete(hash_table_t *ht, const char *key)
            else{
             ht->buckets[index] = entry->next;
            }
-           free(entry);
            free(entry->key);
+           free(entry);
            ht->count--;
         }
         prev = entry;
