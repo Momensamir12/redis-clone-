@@ -2,7 +2,7 @@
 #include <string.h>
 #include "redis_db.h"
 #include "../hash_table/hash_table.h"
-
+#include "../lib/list.h"
 // Create a new Redis database
 redis_db_t *redis_db_create(int id) {
     redis_db_t *db = malloc(sizeof(redis_db_t));
@@ -71,6 +71,19 @@ redis_object_t *redis_object_create(redis_type_t type, void *ptr) {
     obj->refcount = 1;  // Start with reference count of 1
     
     return obj;
+}
+redis_object_t *redis_object_create_string(const char *value) {
+    char *str = strdup(value);
+    if (!str) return NULL;
+    
+    return redis_object_create(REDIS_STRING, str);
+}
+
+redis_object_t *redis_object_create_list(void) {
+    redis_list_t *list = list_create();
+    if (!list) return NULL;
+    
+    return redis_object_create(REDIS_LIST, list);
 }
 
 // Destroy a Redis object
