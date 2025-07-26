@@ -8,7 +8,7 @@
 #include "redis_command_handler.h"
 #include "../redis_db/redis_db.h"
 
-char *handle_command(char *buffer, redis_db_t *db)
+char *handle_command(redis_db_t *db, char * buffer)
 {
     resp_buffer_t *resp_buffer = calloc(1, sizeof(resp_buffer_t));
     if(!buffer || !resp_buffer)

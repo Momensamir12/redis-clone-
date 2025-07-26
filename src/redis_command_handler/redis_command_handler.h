@@ -2,6 +2,7 @@
 #define REDIS_COMMAND_HANDLER_H
 
 #include "../resp_praser/resp_parser.h"
+#include "../redis_db/redis_db.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
