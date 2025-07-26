@@ -16,7 +16,7 @@ include_directories(
 )
 
 # Add the executable and all source files explicitly
-add_executable(redis_clone
+add_executable(redis
     src/main.c
     src/event_loop/event_loop.c
     src/hash_table/hash_table.c
