@@ -1,9 +1,28 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.10)
+project(CodecraftersRedisC C)
 
-project(codecrafters-redis)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
-file(GLOB_RECURSE SOURCE_FILES src/*.c src/*.h)
+# Add include directories for your headers
+include_directories(
+    src/event_loop
+    src/hash_table
+    src/redis_command_handler
+    src/redis_db
+    src/redis_server
+    src/resp_praser
+    src/server
+)
 
-set(CMAKE_C_STANDARD 23) # Enable the C23 standard
-
-add_executable(redis ${SOURCE_FILES})
+# Add the executable and all source files explicitly
+add_executable(redis_clone
+    src/main.c
+    src/event_loop/event_loop.c
+    src/hash_table/hash_table.c
+    src/redis_command_handler/redis_command_handler.c
+    src/redis_db/redis_db.c
+    src/redis_server/redis_server.c
+    src/resp_praser/resp_parser.c
+    src/server/server.c
+)
