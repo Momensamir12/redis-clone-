@@ -129,7 +129,6 @@ char* handle_get_command(redis_db_t *db, char *key) {
     if(is_expired(obj)) {
         // Remove expired key
         hash_table_delete(db->dict, key);
-        redis_object_destroy(obj);
         return strdup(NULL_RESP_VALUE);
     }
     
