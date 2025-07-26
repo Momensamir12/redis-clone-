@@ -52,7 +52,7 @@ char *handle_command(redis_db_t *db, char * buffer)
         handle_set_command(db, key, value);
         response = encode_simple_string("OK");
     }
-    else if (strcmp(command, "get")){
+    else if (strcmp(command, "get") == 0){
       char *key = parse_resp_array(resp_buffer);
       response = handle_get_command(db, key);
     }
