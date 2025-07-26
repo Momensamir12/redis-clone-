@@ -26,7 +26,7 @@ redis_server_t* redis_server_create(int port)
         return NULL;
     }
     redis->server = server;
-    
+    redis->db = redis_db_create(0);
     event_loop_t *event_loop = event_loop_create();
     if(!event_loop){
         server_destroy(server);

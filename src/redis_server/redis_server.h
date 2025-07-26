@@ -3,10 +3,11 @@
 
 #include "../event_loop/event_loop.h"
 #include "../server/server.h"  
-
+#include "../redis_db/redis_db.h"
 typedef struct redis_server {
     server_t *server;
     event_loop_t *event_loop;
+    redis_db_t *db;
 } redis_server_t;
 
 redis_server_t* redis_server_create(int port);

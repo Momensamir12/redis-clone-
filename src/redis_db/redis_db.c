@@ -10,17 +10,14 @@ redis_db_t *redis_db_create(int id) {
         return NULL;
     }
     
-    // Initialize database ID
     db->id = id;
     
-    // Create main dictionary with reasonable initial size
     db->dict = hash_table_create(1024);
     if (!db->dict) {
         free(db);
         return NULL;
     }
     
-    // Create expires dictionary (smaller initial size)
     db->expires = hash_table_create(256);
     if (!db->expires) {
         hash_table_destroy(db->dict);
@@ -35,7 +32,6 @@ redis_db_t *redis_db_create(int id) {
 void redis_db_destroy(redis_db_t *db) {
     if (!db) return;
     
-    // First, free all Redis objects in the main dictionary
     if (db->dict) {
         // Iterate through all buckets
         for (size_t i = 0; i < db->dict->size; i++) {
