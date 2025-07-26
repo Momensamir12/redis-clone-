@@ -26,7 +26,7 @@ static redis_command_t commands[] = {
     {"llen",  handle_llen_command,  2,  2},
     {"rpop",  handle_rpop_command,  2,  2},
     {"lpop",  handle_lpop_command,  2,  2},
-    {"lrange", handle_lrange_command, 3, 3},
+    {"lrange", handle_lrange_command, 4, 4},
     {NULL, NULL, 0, 0}  // Sentinel
 };
 
