@@ -25,4 +25,5 @@ add_executable(redis
     src/redis_server/redis_server.c
     src/resp_praser/resp_parser.c
     src/server/server.c
+    src/expiry_utils/expiry_utils.c
 )

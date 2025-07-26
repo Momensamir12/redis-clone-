@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <ctype.h>
+#include "../expiry_utils/expiry_utils.h"
 
 char * handle_command (redis_db_t *db, char *buffer);
 void handle_set_command(redis_db_t *db, char *key, char *value, char *expiry);
