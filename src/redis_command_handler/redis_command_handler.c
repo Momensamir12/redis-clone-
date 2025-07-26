@@ -46,7 +46,7 @@ char *handle_command(redis_db_t *db, char * buffer)
     else if (strcmp(command, "ping") == 0) {  
         response = encode_simple_string("PONG");
     }
-    else if (strcmp(command, "set")){
+    else if (strcmp(command, "set") == 0){
         char *key = parse_resp_array(resp_buffer);
         char *value = parse_resp_array(resp_buffer);
         handle_set_command(db, key, value);
