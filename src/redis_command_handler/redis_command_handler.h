@@ -30,5 +30,7 @@ char *handle_lpush_command(redis_db_t *db, char **args, int argc);
 char *handle_llen_command(redis_db_t *db, char **args, int argc);
 char *handle_rpop_command(redis_db_t *db, char **args, int argc);
 char *handle_lpop_command(redis_db_t *db, char **args, int argc);
+char *handle_lrange_command(redis_db_t *db, char **args, int argc);
+
 
 #endif
