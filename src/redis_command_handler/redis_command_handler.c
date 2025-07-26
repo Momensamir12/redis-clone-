@@ -53,7 +53,7 @@ char *handle_command(redis_db_t *db, char * buffer)
         response = encode_simple_string("OK");
     }
     else if (strcmp(command, "get")){
-      char *key = parse_resp_array(buffer);
+      char *key = parse_resp_array(resp_buffer);
       response = handle_get_command(db, key);
     }
     else {
@@ -69,7 +69,7 @@ char *handle_command(redis_db_t *db, char * buffer)
     return response;
 }
 
-void handle_set_command(redis_db_t *db, const char *key, const char *value) {
+void handle_set_command(redis_db_t *db, char *key, char *value) {
     redis_object_t *obj = malloc(sizeof(redis_object_t));
     obj->type = REDIS_STRING;
     obj->ptr = strdup(value);  
@@ -77,7 +77,7 @@ void handle_set_command(redis_db_t *db, const char *key, const char *value) {
     hash_table_set(db->dict, key, obj);
 }
 
-char* handle_get_command(redis_db_t *db, const char *key) {
+char* handle_get_command(redis_db_t *db, char *key) {
     void *value = hash_table_get(db->dict, key);
     if (!value) {
         return encode_bulk_string("-1");  
