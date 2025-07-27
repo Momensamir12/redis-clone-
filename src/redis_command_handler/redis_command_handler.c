@@ -335,8 +335,12 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
         free(value);
         return strdup("*0\r\n");
     }
-    
     char *response = encode_resp_array(value, actual_count);
+    if(actual_count > 1)
+      response = encode_resp_array(value, actual_count);
+    else
+      response = encode_bulk_string(value[0]);  
+    
     free(value);
     return response;
 }
