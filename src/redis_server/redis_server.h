@@ -4,6 +4,7 @@
 #include "../event_loop/event_loop.h"
 #include "../server/server.h"  
 #include "../redis_db/redis_db.h"
+#include "../lib/list.h"
 typedef struct redis_server {
     server_t *server;
     event_loop_t *event_loop;
