@@ -258,6 +258,39 @@ char *handle_get_command(redis_server_t *server, char **args, int argc, void *cl
 }
 
 // LPUSH with blocking client notification
+// In redis_command_handler.c - Fix RPUSH
+char *handle_rpush_command(redis_server_t *server, char **args, int argc, void *client) {
+    (void)client;
+    char *key = args[1];
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    
+    if (!obj) {
+        obj = redis_object_create_list();
+        hash_table_set(server->db->dict, strdup(key), obj);
+    } else if (obj->type != REDIS_LIST) {
+        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+    }
+    
+    redis_list_t *list = (redis_list_t *)obj->ptr;
+    
+    // Push all values
+    for (int i = 2; i < argc; i++) {
+        list_rpush(list, strdup(args[i]));
+    }
+    
+    // Get the length BEFORE checking blocked clients
+    size_t list_len = list_length(list);
+    
+    // Now check blocked clients (they might consume the values)
+    check_blocked_clients_for_key(server, key);
+    
+    // Return the length from BEFORE blocked clients consumed values
+    char response[32];
+    sprintf(response, ":%zu\r\n", list_len);
+    return strdup(response);
+}
+
+// Same fix for LPUSH
 char *handle_lpush_command(redis_server_t *server, char **args, int argc, void *client) {
     (void)client;
     char *key = args[1];
@@ -277,38 +310,15 @@ char *handle_lpush_command(redis_server_t *server, char **args, int argc, void *
         list_lpush(list, strdup(args[i]));
     }
     
+    // Get the length BEFORE checking blocked clients
+    size_t list_len = list_length(list);
+    
     // Check if any clients are blocked on this key
     check_blocked_clients_for_key(server, key);
     
+    // Return the original length
     char response[32];
-    sprintf(response, ":%zu\r\n", list_length(list));
-    return strdup(response);
-}
-
-// RPUSH with blocking client notification
-char *handle_rpush_command(redis_server_t *server, char **args, int argc, void *client) {
-    (void)client;
-    char *key = args[1];
-    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
-    
-    if (!obj) {
-        obj = redis_object_create_list();
-        hash_table_set(server->db->dict, strdup(key), obj);
-    } else if (obj->type != REDIS_LIST) {
-        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
-    }
-    
-    redis_list_t *list = (redis_list_t *)obj->ptr;
-    
-    for (int i = 2; i < argc; i++) {
-        list_rpush(list, strdup(args[i]));
-    }
-    
-    // Check blocked clients
-    check_blocked_clients_for_key(server, key);
-    
-    char response[32];
-    sprintf(response, ":%zu\r\n", list_length(list));
+    sprintf(response, ":%zu\r\n", list_len);
     return strdup(response);
 }
 
