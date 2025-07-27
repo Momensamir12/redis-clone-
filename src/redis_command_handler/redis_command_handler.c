@@ -284,7 +284,6 @@ char *handle_rpush_command(redis_server_t *server, char **args, int argc, void *
     // Now check blocked clients (they might consume the values)
     check_blocked_clients_for_key(server, key);
     
-    // Return the length from BEFORE blocked clients consumed values
     char response[32];
     sprintf(response, ":%zu\r\n", list_len);
     return strdup(response);
