@@ -320,9 +320,10 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     int i = 0;
     int actual_count = 0;  
     while(count--){
-      value[i++] = (char *)list_lpop(list);
+      value[i] = (char *)list_lpop(list);
       if(value[i]){
         actual_count++;
+        i++;
       }
       else
         break;
