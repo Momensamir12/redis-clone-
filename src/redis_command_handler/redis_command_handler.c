@@ -324,6 +324,7 @@ char *handle_lpush_command(redis_server_t *server, char **args, int argc, void *
 
 // BLPOP implementation
 // In handle_blpop_command - Fix timeout parsing
+// In handle_blpop_command - Simple fix without ceil()
 char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *client) {
     if (!client || !server) {
         return strdup("-ERR internal error\r\n");
@@ -331,13 +332,21 @@ char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *
     
     client_t *c = (client_t *)client;
     
-    // Parse timeout as float and convert to seconds
+    // Parse timeout as float
     double timeout_float = atof(args[argc - 1]);
-    int timeout = (int)ceil(timeout_float);  // Round up to nearest second
+    int timeout;
     
-    // If timeout is less than 1 second but greater than 0, set to 1
-    if (timeout_float > 0 && timeout == 0) {
-        timeout = 1;
+    // Handle fractional seconds
+    if (timeout_float == 0.0) {
+        timeout = 0;  // Wait forever
+    } else if (timeout_float > 0.0 && timeout_float < 1.0) {
+        timeout = 1;  // Minimum 1 second for fractional values
+    } else {
+        timeout = (int)timeout_float;  // Truncate to seconds
+        // Add 1 if there's a fractional part
+        if (timeout_float > timeout) {
+            timeout++;
+        }
     }
     
     // Check if client is already blocked
