@@ -11,6 +11,7 @@
 #include "../lib/list.h"
 #include "../redis_server/redis_server.h"
 #include "../clients/client.h"
+#include <math.h>
 #define NULL_RESP_VALUE "$-1\r\n"
 
 // Global command hash table
