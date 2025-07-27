@@ -8,6 +8,10 @@ typedef struct redis_server {
     server_t *server;
     event_loop_t *event_loop;
     redis_db_t *db;
+    redis_list_t *clients;
+    redis_list_t *blocked_clients;
+
+
 } redis_server_t;
 
 redis_server_t* redis_server_create(int port);

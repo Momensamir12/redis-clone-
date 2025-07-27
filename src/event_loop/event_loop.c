@@ -5,6 +5,8 @@
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
+#include <sys/timerfd.h>
+
 
 event_loop_t *event_loop_create(void)
 {
@@ -18,6 +20,7 @@ event_loop_t *event_loop_create(void)
         free(event_loop);
         return NULL;
     }
+    event_loop->timer_fd = setup_timer_fd();
     event_loop->running = false;
     return event_loop;
 }
@@ -31,7 +34,8 @@ void event_loop_destroy(event_loop_t *event_loop)
     {
         close(event_loop->epoll_fd);
     }
-
+    if(event_loop->timer_fd >= 0)
+      close(event_loop->timer_fd);
     free(event_loop);
 }
 
@@ -110,4 +114,33 @@ int set_nonblocking(int fd)
     }
 
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+int setup_timer_fd() {
+    // Create the timer
+    int timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    if (timer_fd == -1) {
+        perror("timerfd_create");
+        return -1;
+    }
+    
+    struct itimerspec timer_spec;
+    
+    // Interval for periodic timer (100ms)
+    timer_spec.it_interval.tv_sec = 0;         
+    timer_spec.it_interval.tv_nsec = 100000000; 
+    
+    // Initial expiration (also 100ms)
+    timer_spec.it_value.tv_sec = 0;
+    timer_spec.it_value.tv_nsec = 100000000;
+    
+    // Arm the timer
+    if (timerfd_settime(timer_fd, 0, &timer_spec, NULL) == -1) {
+        perror("timerfd_settime");
+        close(timer_fd);
+        return -1;
+    }
+    
+    printf("Timer created: will fire every 100ms\n");
+    return timer_fd;
 }

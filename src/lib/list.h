@@ -30,5 +30,7 @@ void *list_rpop(redis_list_t *list);              // Remove from right
 size_t list_length(redis_list_t *list);           // Get length (LLEN)
 void *list_index(redis_list_t *list, int index);  // Get by index (LINDEX)
 char **list_range(redis_list_t *list, int start, int stop, int *count);
+// Add to list.c
+int list_remove(redis_list_t *list, void *data);
 
 #endif

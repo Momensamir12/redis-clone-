@@ -164,3 +164,22 @@ char **list_range(redis_list_t *list, int start, int stop, int *count) {
     *count = result_count;
     return result;
 }
+
+int list_remove(redis_list_t *list, void *data) {
+    list_node_t *node = list->head;
+    while (node) {
+        if (node->data == data) {
+            if (node->prev) node->prev->next = node->next;
+            else list->head = node->next;
+            
+            if (node->next) node->next->prev = node->prev;
+            else list->tail = node->prev;
+            
+            free(node);
+            list->length--;
+            return 1;  // Success
+        }
+        node = node->next;
+    }
+    return 0;  // Not found
+}

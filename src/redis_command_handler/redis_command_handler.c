@@ -9,7 +9,8 @@
 #include "../redis_db/redis_db.h"
 #include "../expiry_utils/expiry_utils.h"
 #include "../lib/list.h"
-
+#include "../redis_server/redis_server.h"
+#include "../clients/client.h"
 #define NULL_RESP_VALUE "$-1\r\n"
 
 // Global command hash table
@@ -27,6 +28,7 @@ static redis_command_t commands[] = {
     {"rpop",  handle_rpop_command,  2,  2},
     {"lpop",  handle_lpop_command,  2,  3},
     {"lrange", handle_lrange_command, 4, 4},
+    {"blpop", handle_blpop_command, 3, -1},
     {NULL, NULL, 0, 0}  // Sentinel
 };
 
@@ -86,14 +88,11 @@ static void free_command_args(char **args, int argc) {
 }
 
 // Main command handler
-char *handle_command(redis_db_t *db, char *buffer) {
-    // Ensure command table is initialized
-    if (command_table == NULL) {
-        init_command_table();
-    }
+char *handle_command(redis_server_t *server, char *buffer, void *client) {
+    if (!server || !buffer) return NULL;
     
     resp_buffer_t *resp_buffer = calloc(1, sizeof(resp_buffer_t));
-    if (!buffer || !resp_buffer) return NULL;
+    if (!resp_buffer) return NULL;
     
     resp_buffer->buffer = buffer;
     resp_buffer->size = strlen(buffer);
@@ -133,8 +132,8 @@ char *handle_command(redis_db_t *db, char *buffer) {
         return strdup(response);
     }
     
-    // Call handler
-    char *response = cmd->handler(db, args, argc);
+    // Call handler with server context
+    char *response = cmd->handler(server, args, argc, client);
     
     free_command_args(args, argc);
     free(resp_buffer);
@@ -142,21 +141,68 @@ char *handle_command(redis_db_t *db, char *buffer) {
 }
 
 // Command handlers
-char *handle_echo_command(redis_db_t *db, char **args, int argc) {
-    (void)db;  // Unused
-    (void)argc; // Already validated
+static void check_blocked_clients_for_key(redis_server_t *server, const char *key) {
+    if (!server || !server->blocked_clients || !key) return;
+    
+    list_node_t *node = server->blocked_clients->head;
+    while (node) {
+        list_node_t *next = node->next;
+        client_t *blocked_client = (client_t *)node->data;
+        
+        if (blocked_client->blocked_key && 
+            strcmp(blocked_client->blocked_key, key) == 0) {
+            
+            // Check if key now has data
+            redis_object_t *obj = hash_table_get(server->db->dict, key);
+            if (obj && obj->type == REDIS_LIST) {
+                redis_list_t *list = (redis_list_t *)obj->ptr;
+                if (list_length(list) > 0) {
+                    // Pop value
+                    char *value = (char *)list_lpop(list);
+                    
+                    if (value) {
+                        // Send response to unblocked client
+                        char response[1024];
+                        snprintf(response, sizeof(response), 
+                                "*2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+                                strlen(key), key, strlen(value), value);
+                        send(blocked_client->fd, response, strlen(response), MSG_NOSIGNAL);
+                        
+                        // Unblock client
+                        client_unblock(blocked_client);
+                        remove_client_from_list(server->blocked_clients, blocked_client);
+                        
+                        free(value);
+                        
+                        printf("Unblocked client fd=%d with data from key '%s'\n", 
+                               blocked_client->fd, key);
+                    }
+                }
+            }
+        }
+        node = next;
+    }
+}
+
+// Update command handlers to use server context
+char *handle_echo_command(redis_server_t *server, char **args, int argc, void *client) {
+    (void)server;
+    (void)client;
+    (void)argc;
     return encode_bulk_string(args[1]);
 }
 
-char *handle_ping_command(redis_db_t *db, char **args, int argc) {
-    (void)db;  // Unused
+char *handle_ping_command(redis_server_t *server, char **args, int argc, void *client) {
+    (void)server;
+    (void)client;
     if (argc == 2) {
         return encode_bulk_string(args[1]);
     }
     return encode_simple_string("PONG");
 }
 
-char *handle_set_command(redis_db_t *db, char **args, int argc) {
+char *handle_set_command(redis_server_t *server, char **args, int argc, void *client) {
+    (void)client;
     char *key = args[1];
     char *value = args[2];
     char *expiry_ms = NULL;
@@ -168,7 +214,6 @@ char *handle_set_command(redis_db_t *db, char **args, int argc) {
             expiry_ms = args[i + 1];
             i += 2;
         } else if (strcasecmp(args[i], "ex") == 0 && i + 1 < argc) {
-            // Convert seconds to milliseconds
             int seconds = atoi(args[i + 1]);
             char ms_buf[32];
             sprintf(ms_buf, "%d", seconds * 1000);
@@ -179,21 +224,21 @@ char *handle_set_command(redis_db_t *db, char **args, int argc) {
         }
     }
     
-    // Create object
     redis_object_t *obj = redis_object_create_string(value);
     
     if (expiry_ms) {
         set_expiry_ms(obj, atoi(expiry_ms));
     }
     
-    hash_table_set(db->dict, strdup(key), obj);
+    hash_table_set(server->db->dict, strdup(key), obj);
     return encode_simple_string("OK");
 }
 
-char *handle_get_command(redis_db_t *db, char **args, int argc) {
+char *handle_get_command(redis_server_t *server, char **args, int argc, void *client) {
     (void)argc;
+    (void)client;
     char *key = args[1];
-    redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
     
     if (!obj) {
         return strdup(NULL_RESP_VALUE);
@@ -201,7 +246,7 @@ char *handle_get_command(redis_db_t *db, char **args, int argc) {
     
     if (is_expired(obj)) {
         redis_object_destroy(obj);
-        hash_table_delete(db->dict, key);
+        hash_table_delete(server->db->dict, key);
         return strdup(NULL_RESP_VALUE);
     }
     
@@ -212,13 +257,15 @@ char *handle_get_command(redis_db_t *db, char **args, int argc) {
     return encode_bulk_string((char *)obj->ptr);
 }
 
-char *handle_rpush_command(redis_db_t *db, char **args, int argc) {
+// LPUSH with blocking client notification
+char *handle_lpush_command(redis_server_t *server, char **args, int argc, void *client) {
+    (void)client;
     char *key = args[1];
-    redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
     
     if (!obj) {
         obj = redis_object_create_list();
-        hash_table_set(db->dict, strdup(key), obj);
+        hash_table_set(server->db->dict, strdup(key), obj);
     } else if (obj->type != REDIS_LIST) {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
     }
@@ -227,22 +274,26 @@ char *handle_rpush_command(redis_db_t *db, char **args, int argc) {
     
     // Push all values
     for (int i = 2; i < argc; i++) {
-        list_rpush(list, strdup(args[i]));
+        list_lpush(list, strdup(args[i]));
     }
     
-    // Return the length as integer
+    // Check if any clients are blocked on this key
+    check_blocked_clients_for_key(server, key);
+    
     char response[32];
     sprintf(response, ":%zu\r\n", list_length(list));
     return strdup(response);
 }
 
-char *handle_lpush_command(redis_db_t *db, char **args, int argc) {
+// RPUSH with blocking client notification
+char *handle_rpush_command(redis_server_t *server, char **args, int argc, void *client) {
+    (void)client;
     char *key = args[1];
-    redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
     
     if (!obj) {
         obj = redis_object_create_list();
-        hash_table_set(db->dict, strdup(key), obj);
+        hash_table_set(server->db->dict, strdup(key), obj);
     } else if (obj->type != REDIS_LIST) {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
     }
@@ -250,18 +301,69 @@ char *handle_lpush_command(redis_db_t *db, char **args, int argc) {
     redis_list_t *list = (redis_list_t *)obj->ptr;
     
     for (int i = 2; i < argc; i++) {
-        list_lpush(list, strdup(args[i]));
+        list_rpush(list, strdup(args[i]));
     }
+    
+    // Check blocked clients
+    check_blocked_clients_for_key(server, key);
     
     char response[32];
     sprintf(response, ":%zu\r\n", list_length(list));
     return strdup(response);
 }
 
-char *handle_llen_command(redis_db_t *db, char **args, int argc) {
+// BLPOP implementation
+char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *client) {
+    if (!client || !server) {
+        return strdup("-ERR internal error\r\n");
+    }
+    
+    client_t *c = (client_t *)client;
+    int timeout = atoi(args[argc - 1]);  // Last argument is timeout
+    
+    // Check if client is already blocked
+    if (c->is_blocked) {
+        return strdup("-ERR client already blocked\r\n");
+    }
+    
+    // Try each key (except last arg which is timeout)
+    for (int i = 1; i < argc - 1; i++) {
+        char *key = args[i];
+        redis_object_t *obj = hash_table_get(server->db->dict, key);
+        
+        if (obj && obj->type == REDIS_LIST) {
+            redis_list_t *list = (redis_list_t *)obj->ptr;
+            if (list_length(list) > 0) {
+                // Can pop immediately
+                char *value = (char *)list_lpop(list);
+                if (value) {
+                    char response[1024];
+                    snprintf(response, sizeof(response), 
+                            "*2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+                            strlen(key), key, strlen(value), value);
+                    free(value);
+                    return strdup(response);
+                }
+            }
+        }
+    }
+    
+    // No keys have values - block the client
+    // For simplicity, we'll block on first key only
+    client_block(c, args[1], timeout);
+    add_client_to_list(server->blocked_clients, c);
+    
+    printf("Client fd=%d blocked on key '%s' with timeout %d\n", 
+           c->fd, args[1], timeout);
+    
+    return NULL;  // NULL means don't send response - client is blocked
+}
+
+// Other command handlers remain similar, just update signature...
+char *handle_llen_command(redis_server_t *server, char **args, int argc, void *client) {
     (void)argc;
     char *key = args[1];
-    redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
     
     if (!obj) {
         return strdup(":0\r\n");
@@ -277,11 +379,12 @@ char *handle_llen_command(redis_db_t *db, char **args, int argc) {
     return strdup(response);
 }
 
-char *handle_rpop_command(redis_db_t *db, char **args, int argc) {
+char *handle_rpop_command(redis_server_t *server, char **args, int argc, void *client) {
     (void)argc;
+    (void)client;
     char *key = args[1];
 
-    redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
     
     if (!obj || obj->type != REDIS_LIST) {
         return strdup(NULL_RESP_VALUE);
@@ -295,57 +398,64 @@ char *handle_rpop_command(redis_db_t *db, char **args, int argc) {
     }
     
     char *response = encode_bulk_string(value);
-    free(value);  // Free the popped value
-    return response;
-}
-
-char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
-    (void)argc;
-    char *key = args[1];
-    size_t count = 0;
-    printf("watafuko is happenning \n");
-    if(argc >= 3){
-      count = atoi(args[2]);
-    }
-
-    redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
-    
-    if (!obj || obj->type != REDIS_LIST) {
-        return strdup(NULL_RESP_VALUE);
-    }
-    
-    redis_list_t *list = (redis_list_t *)obj->ptr;
-    char **value = calloc(count, sizeof(char*));
-    
-    int actual_count = 0;
-    if(count == 0)
-      count = 1;
-    printf("%s%d\n", "count before loop", count);
-    for(int i = 0; i < count; i++){
-        value[i] = (char *)list_lpop(list);
-        if(value[i]){
-            actual_count++;
-            printf("%s\n", value[i]);
-        }
-        else
-          break;
-    }  
-     printf("%s%d\n", "count", actual_count);
-    if (actual_count == 0) {
-        free(value);
-        return strdup("*0\r\n");
-    }
-    char *response = encode_resp_array(value, actual_count);
-    if(actual_count > 1)
-      response = encode_resp_array(value, actual_count);
-    else
-      response = encode_bulk_string(value[0]);  
-    
     free(value);
     return response;
 }
 
-char *handle_lrange_command(redis_db_t *db, char **args, int argc) {
+char *handle_lpop_command(redis_server_t *server, char **args, int argc, void *client) {
+    (void)client;
+    char *key = args[1];
+    size_t count = 0;
+    if (argc >= 3) {
+        count = atoi(args[2]);
+    }
+
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+
+    if (!obj || obj->type != REDIS_LIST) {
+        return strdup(NULL_RESP_VALUE);
+    }
+
+    redis_list_t *list = (redis_list_t *)obj->ptr;
+    
+    if (count == 0) count = 1;
+    
+    char **values = calloc(count, sizeof(char *));
+    int actual_count = 0;
+
+    for (int i = 0; i < count; i++) {
+        values[i] = (char *)list_lpop(list);
+        if (values[i]) {
+            actual_count++;
+        } else {
+            break;
+        }
+    }
+    
+    if (actual_count == 0) {
+        free(values);
+        return strdup("*0\r\n");
+    }
+    
+    char *response;
+    if (argc < 3 && actual_count == 1) {
+        // Single value response for LPOP without count
+        response = encode_bulk_string(values[0]);
+        free(values[0]);
+    } else {
+        // Array response for LPOP with count
+        response = encode_resp_array(values, actual_count);
+        for (int i = 0; i < actual_count; i++) {
+            free(values[i]);
+        }
+    }
+    
+    free(values);
+    return response;
+}
+
+char *handle_lrange_command(redis_server_t *server, char **args, int argc, void *client) {
+    (void)client;
     if (argc != 4) {
         return strdup("-ERR wrong number of arguments for 'lrange' command\r\n");
     }
@@ -354,7 +464,7 @@ char *handle_lrange_command(redis_db_t *db, char **args, int argc) {
     int start = atoi(args[2]);
     int stop = atoi(args[3]);
     
-    redis_object_t *obj = hash_table_get(db->dict, key);
+    redis_object_t *obj = hash_table_get(server->db->dict, key);
     if (!obj) {
         return strdup("*0\r\n");
     }
@@ -375,4 +485,60 @@ char *handle_lrange_command(redis_db_t *db, char **args, int argc) {
     free(values);  
     
     return response;
+}
+
+void check_blocked_clients_timeout(redis_server_t *server) {
+    if (!server || !server->blocked_clients) return;
+    
+    time_t now = time(NULL);
+    list_node_t *node = server->blocked_clients->head;
+    
+    printf("Checking %zu blocked clients for timeout\n", list_length(server->blocked_clients));
+    
+    while (node) {
+        list_node_t *next = node->next;
+        client_t *client = (client_t *)node->data;
+        
+        // Check timeout
+        if (client->block_timeout > 0 && client->block_timeout <= now) {
+            printf("Client fd=%d timed out\n", client->fd);
+            
+            // Send nil response for timeout
+            const char *nil_response = "*-1\r\n";
+            send(client->fd, nil_response, strlen(nil_response), MSG_NOSIGNAL);
+            
+            // Unblock client
+            client_unblock(client);
+            remove_client_from_list(server->blocked_clients, client);
+        }
+        // Also check if the key now has data (in case timer runs before push notification)
+        else if (client->blocked_key) {
+            redis_object_t *obj = hash_table_get(server->db->dict, client->blocked_key);
+            if (obj && obj->type == REDIS_LIST) {
+                redis_list_t *list = (redis_list_t *)obj->ptr;
+                if (list_length(list) > 0) {
+                    // Pop value
+                    char *value = (char *)list_lpop(list);
+                    if (value) {
+                        // Send response
+                        char response[1024];
+                        snprintf(response, sizeof(response), 
+                                "*2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+                                strlen(client->blocked_key), client->blocked_key, 
+                                strlen(value), value);
+                        send(client->fd, response, strlen(response), MSG_NOSIGNAL);
+                        
+                        // Unblock client
+                        client_unblock(client);
+                        remove_client_from_list(server->blocked_clients, client);
+                        
+                        free(value);
+                        printf("Client fd=%d unblocked by timer check\n", client->fd);
+                    }
+                }
+            }
+        }
+        
+        node = next;
+    }
 }
