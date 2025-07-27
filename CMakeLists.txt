@@ -27,4 +27,5 @@ add_executable(redis
     src/server/server.c
     src/expiry_utils/expiry_utils.c
     src/lib/list.c
+    src/clients/client.c
 )
