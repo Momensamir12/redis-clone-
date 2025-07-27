@@ -317,14 +317,14 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     char **value = calloc(count, sizeof(char*));
     if(count <= 0)
       return NULL_RESP_VALUE;
-    int i = 0;  
-    while(count--){
+    int i = 0, tmp = count;  
+    while(tmp--){
       value[i++] = (char *)list_lpop(list);
     }  
     
-    // if (!value) {
-    //     return strdup(NULL_RESP_VALUE);
-    // }
+    if (!value) {
+        return strdup(NULL_RESP_VALUE);
+    }
     
     char *response = encode_resp_array(value, count);
     free(value);
