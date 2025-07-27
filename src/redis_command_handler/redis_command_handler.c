@@ -487,6 +487,7 @@ char *handle_lrange_command(redis_server_t *server, char **args, int argc, void 
     return response;
 }
 
+// In redis_command_handler.c - Update check_blocked_clients_timeout
 void check_blocked_clients_timeout(redis_server_t *server) {
     if (!server || !server->blocked_clients) return;
     
@@ -499,7 +500,7 @@ void check_blocked_clients_timeout(redis_server_t *server) {
         list_node_t *next = node->next;
         client_t *client = (client_t *)node->data;
         
-        // Check timeout
+        // Only check timeout if block_timeout > 0 (0 means wait forever)
         if (client->block_timeout > 0 && client->block_timeout <= now) {
             printf("Client fd=%d timed out\n", client->fd);
             
@@ -511,7 +512,7 @@ void check_blocked_clients_timeout(redis_server_t *server) {
             client_unblock(client);
             remove_client_from_list(server->blocked_clients, client);
         }
-        // Also check if the key now has data (in case timer runs before push notification)
+        // Also check if the key now has data (for all blocked clients, regardless of timeout)
         else if (client->blocked_key) {
             redis_object_t *obj = hash_table_get(server->db->dict, client->blocked_key);
             if (obj && obj->type == REDIS_LIST) {
