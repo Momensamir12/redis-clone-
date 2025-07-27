@@ -322,13 +322,22 @@ char *handle_lpush_command(redis_server_t *server, char **args, int argc, void *
 }
 
 // BLPOP implementation
+// In handle_blpop_command - Fix timeout parsing
 char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *client) {
     if (!client || !server) {
         return strdup("-ERR internal error\r\n");
     }
     
     client_t *c = (client_t *)client;
-    int timeout = atoi(args[argc - 1]);  // Last argument is timeout
+    
+    // Parse timeout as float and convert to seconds
+    double timeout_float = atof(args[argc - 1]);
+    int timeout = (int)ceil(timeout_float);  // Round up to nearest second
+    
+    // If timeout is less than 1 second but greater than 0, set to 1
+    if (timeout_float > 0 && timeout == 0) {
+        timeout = 1;
+    }
     
     // Check if client is already blocked
     if (c->is_blocked) {
@@ -358,14 +367,13 @@ char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *
     }
     
     // No keys have values - block the client
-    // For simplicity, we'll block on first key only
     client_block(c, args[1], timeout);
     add_client_to_list(server->blocked_clients, c);
     
-    printf("Client fd=%d blocked on key '%s' with timeout %d\n", 
+    printf("Client fd=%d blocked on key '%s' with timeout %d seconds\n", 
            c->fd, args[1], timeout);
     
-    return NULL;  // NULL means don't send response - client is blocked
+    return NULL;  // No response - client is blocked
 }
 
 // Other command handlers remain similar, just update signature...
