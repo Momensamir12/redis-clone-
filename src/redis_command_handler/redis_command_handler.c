@@ -328,7 +328,7 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
         else
           break;
     }  
-
+     printf("%s%d\n", "count", actual_count);
     if (actual_count == 0) {
         free(value);
         return strdup("*0\r\n");
