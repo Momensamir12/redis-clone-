@@ -306,7 +306,7 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     if(argc >= 2){
       count = atoi(args[2]);
     }
-
+    printf("%d\n", count);
     redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
     
     if (!obj || obj->type != REDIS_LIST) {
