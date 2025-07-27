@@ -280,6 +280,7 @@ char *handle_llen_command(redis_db_t *db, char **args, int argc) {
 char *handle_rpop_command(redis_db_t *db, char **args, int argc) {
     (void)argc;
     char *key = args[1];
+
     redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
     
     if (!obj || obj->type != REDIS_LIST) {
@@ -301,6 +302,11 @@ char *handle_rpop_command(redis_db_t *db, char **args, int argc) {
 char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     (void)argc;
     char *key = args[1];
+    size_t count = 0;
+    if(argc >= 2){
+      count = atoi(args[2]);
+    }
+
     redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
     
     if (!obj || obj->type != REDIS_LIST) {
@@ -308,13 +314,19 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     }
     
     redis_list_t *list = (redis_list_t *)obj->ptr;
-    char *value = (char *)list_lpop(list);
+    char **value = calloc(count, sizeof(char*));
+    if(count <= 0)
+      return NULL_RESP_VALUE;
+    int i = 0;  
+    while(count--){
+      value[i++] = (char *)list_lpop(list);
+    }  
     
     if (!value) {
         return strdup(NULL_RESP_VALUE);
     }
     
-    char *response = encode_bulk_string(value);
+    char *response = encode_resp_array(value, count);
     free(value);
     return response;
 }
