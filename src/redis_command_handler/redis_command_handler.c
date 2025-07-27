@@ -319,6 +319,7 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     char **value = calloc(count, sizeof(char*));
     
     int actual_count = 0;
+    printf("%s%d\n", "count before loop", count);
     for(int i = 0; i < count; i++){
         value[i] = (char *)list_lpop(list);
         if(value[i]){
