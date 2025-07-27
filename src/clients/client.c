@@ -4,6 +4,7 @@
 #include <sys/time.h>
 #include "../lib/list.h"
 #include "client.h"
+#include <time.h>
 
 client_t *create_client(int fd)
 {
@@ -18,19 +19,6 @@ client_t *create_client(int fd)
     return client;
 }
 
-client_t *create_client(int fd) {
-    client_t *client = calloc(1, sizeof(client_t));
-    if (!client) {
-        return NULL;
-    }
-    
-    client->fd = fd;
-    client->is_blocked = 0;
-    client->block_timeout = 0;
-    client->blocked_key = NULL;
-    
-    return client;
-}
 
 void add_client_to_list(redis_list_t *list, client_t *client) {
     if (!list || !client) return;
