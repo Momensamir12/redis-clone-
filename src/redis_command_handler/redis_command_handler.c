@@ -304,11 +304,12 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     char *key = args[1];
     size_t count = 0;
     printf("watafuko is happenning \n");
-    if(argc >= 2){
+    if(argc >= 3){
       count = atoi(args[2]);
      if(count <= 0)
       return NULL_RESP_VALUE; 
     }
+    printf("watafuko is happenning2 \n");
     printf("%s%d\n","count of elements is",count);
     redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
     
