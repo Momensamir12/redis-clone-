@@ -16,9 +16,8 @@ typedef struct client {
 client_t *create_client(int fd);
 void add_client_to_list(redis_list_t *list, client_t *client);
 void remove_client_from_list(redis_list_t *list, client_t *client);
-client_t *find_client_by_fd(redis_list_t *list, int fd);
 void client_block(client_t *client, const char *key, int timeout);
 void client_unblock(client_t *client);
-
+void free_client(client_t *client);
 
 #endif

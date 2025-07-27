@@ -14,6 +14,7 @@
 
 static void handle_server_accept(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void *data);
+static void handle_timer_interrupt(event_loop_t *loop, int fd, uint32_t events, void *data);
 
 redis_server_t* redis_server_create(int port)
 {
@@ -51,8 +52,6 @@ redis_server_t* redis_server_create(int port)
     }
     redis->event_loop = event_loop;
     
-    // Set global context for command handlers to access redis server
-    set_redis_server_context(redis);
     
     if(event_loop_add_fd(event_loop, server->fd, EPOLLIN, handle_server_accept, redis) < 0){
        server_destroy(server);

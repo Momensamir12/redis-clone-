@@ -30,6 +30,7 @@ char *handle_rpop_command(redis_server_t *server, char **args, int argc, void *c
 char *handle_lpop_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_lrange_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *client);
+void check_blocked_clients_timeout(redis_server_t *server);
 
 
 
