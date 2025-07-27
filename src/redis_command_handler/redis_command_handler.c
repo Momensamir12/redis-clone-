@@ -305,6 +305,8 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     size_t count = 0;
     if(argc >= 2){
       count = atoi(args[2]);
+     if(count <= 0)
+      return NULL_RESP_VALUE; 
     }
     printf("%s%d\n","count of elements is",count);
     redis_object_t *obj = (redis_object_t *)hash_table_get(db->dict, key);
@@ -315,20 +317,18 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     
     redis_list_t *list = (redis_list_t *)obj->ptr;
     char **value = calloc(count, sizeof(char*));
-    if(count <= 0)
-      return NULL_RESP_VALUE;
-    int i = 0;
-    int actual_count = 0;  
-    while(count--){
-      value[i] = (char *)list_lpop(list);
-      if(value[i]){
-        actual_count++;
-        i++;
-      }
-      else
-        break;
-    }  
     
+    int actual_count = 0;
+    for(int i = 0; i < count; i++){
+        value[i] = (char *)list_lpop(list);
+        if(value[i]){
+            actual_count++;
+            printf("%s\n", value[i]);
+        }
+        else
+          break;
+    }  
+
     if (actual_count == 0) {
         free(value);
         return strdup("*0\r\n");
