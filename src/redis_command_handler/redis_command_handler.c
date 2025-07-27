@@ -303,6 +303,7 @@ char *handle_lpop_command(redis_db_t *db, char **args, int argc) {
     (void)argc;
     char *key = args[1];
     size_t count = 0;
+    printf("watafuko is happenning \n");
     if(argc >= 2){
       count = atoi(args[2]);
      if(count <= 0)
