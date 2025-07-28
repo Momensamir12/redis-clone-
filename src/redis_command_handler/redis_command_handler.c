@@ -30,6 +30,7 @@ static redis_command_t commands[] = {
     {"lpop",  handle_lpop_command,  2,  3},
     {"lrange", handle_lrange_command, 4, 4},
     {"blpop", handle_blpop_command, 3, -1},
+    {"type", handle_type_command, 2, 2},
     {NULL, NULL, 0, 0}  // Sentinel
 };
 
@@ -539,7 +540,6 @@ void check_blocked_clients_timeout(redis_server_t *server) {
             client_unblock(client);
             remove_client_from_list(server->blocked_clients, client);
         }
-        // Also check if the key now has data (for all blocked clients, regardless of timeout)
         else if (client->blocked_key) {
             redis_object_t *obj = hash_table_get(server->db->dict, client->blocked_key);
             if (obj && obj->type == REDIS_LIST) {
@@ -569,4 +569,19 @@ void check_blocked_clients_timeout(redis_server_t *server) {
         
         node = next;
     }
+}
+
+char *handle_type_command (redis_server_t *server, char **args, int argc, void *client)
+{
+    char *key = args[1];
+    void *value = hash_table_get(server->db->dict, key);
+    if(!value)
+    {
+        return encode_simple_string("none");
+    }
+    redis_object_t *obj = (redis_object_t *)value;
+    char *response = encode_simple_string(redis_type_to_string(obj->type));
+    
+    free(value);
+    return response;
 }
