@@ -153,6 +153,33 @@ void stream_entry_destroy(stream_entry_t *entry) {
     free(entry);
 }
 
+static int is_partial_id_format(const char *id_str, uint64_t *timestamp) {
+    if (!id_str || !timestamp) return 0;
+    
+    char *dash = strchr(id_str, '-');
+    if (!dash) return 0;
+    
+    // Check if sequence part is "*"
+    if (strcmp(dash + 1, "*") != 0) return 0;
+    
+    // Parse timestamp part
+    char *endptr;
+    *timestamp = strtoull(id_str, &endptr, 10);
+    if (endptr != dash) return 0;  // Invalid timestamp part
+    
+    return 1; // Valid "timestamp-*" format
+}
+
+static uint64_t find_last_sequence_for_timestamp(redis_stream_t *stream, uint64_t timestamp) {
+
+    if (stream->last_id && stream->last_timestamp_ms == timestamp) {
+        return stream->last_sequence;
+    }
+    
+    // Default: no entries found for this timestamp
+    // Special case: for timestamp 0, default sequence is 1, otherwise 0
+    return (timestamp == 0) ? 0 : -1; // -1 means "not found", will become 0 or 1
+}
 // Update generate_stream_id to return error codes via a parameter
 static char *generate_stream_id(redis_stream_t *stream, const char *id_hint, int *error_code) {
     uint64_t timestamp_ms;
@@ -161,28 +188,66 @@ static char *generate_stream_id(redis_stream_t *stream, const char *id_hint, int
     *error_code = 0; // Success by default
     
     if (id_hint && strcmp(id_hint, "*") != 0) {
-        // Explicit ID provided - validate it
-        uint64_t provided_ts, provided_seq;
-        if (parse_stream_id(id_hint, &provided_ts, &provided_seq) != 0) {
-            *error_code = 1; // Invalid format
-            return NULL;
-        }
-        
-        // Validate that it's greater than last ID
-        int validation_result = validate_explicit_id(id_hint, stream->last_id);
-        if (validation_result != 0) {
-            if (validation_result == -2) {
-                *error_code = 6; // Special case for 0-0
+        // Check if it's partial format "timestamp-*"
+        uint64_t partial_timestamp;
+        if (is_partial_id_format(id_hint, &partial_timestamp)) {
+            // Handle "timestamp-*" format
+            timestamp_ms = partial_timestamp;
+            
+            // Find last sequence for this timestamp
+            uint64_t last_seq = find_last_sequence_for_timestamp(stream, timestamp_ms);
+            
+            if (last_seq == (uint64_t)-1) {
+                // No entries found for this timestamp
+                if (timestamp_ms == 0) {
+                    sequence = 1; // Special case: 0-* starts at 0-1
+                } else {
+                    sequence = 0; // Normal case: timestamp-* starts at timestamp-0
+                }
             } else {
-                *error_code = 2; // ID ordering error
+                // Increment the last sequence for this timestamp
+                sequence = last_seq + 1;
             }
-            return NULL;
+            
+            // Validate that the generated ID is greater than last ID
+            char temp_id[32];
+            snprintf(temp_id, sizeof(temp_id), "%llu-%llu", 
+                    (unsigned long long)timestamp_ms, 
+                    (unsigned long long)sequence);
+                    
+            int validation_result = validate_explicit_id(temp_id, stream->last_id);
+            if (validation_result != 0) {
+                if (validation_result == -2) {
+                    *error_code = 6; // Special case for 0-0
+                } else {
+                    *error_code = 2; // ID ordering error
+                }
+                return NULL;
+            }
+        } else {
+            // Explicit ID provided - validate it
+            uint64_t provided_ts, provided_seq;
+            if (parse_stream_id(id_hint, &provided_ts, &provided_seq) != 0) {
+                *error_code = 1; // Invalid format
+                return NULL;
+            }
+            
+            // Validate that it's greater than last ID
+            int validation_result = validate_explicit_id(id_hint, stream->last_id);
+            if (validation_result != 0) {
+                if (validation_result == -2) {
+                    *error_code = 6; // Special case for 0-0
+                } else {
+                    *error_code = 2; // ID ordering error
+                }
+                return NULL;
+            }
+            
+            timestamp_ms = provided_ts;
+            sequence = provided_seq;
         }
-        
-        timestamp_ms = provided_ts;
-        sequence = provided_seq;
     } else {
-        // Auto-generate ID
+        // Auto-generate both timestamp and sequence ("*")
         timestamp_ms = get_current_timestamp_ms();
         
         if (timestamp_ms == stream->last_timestamp_ms) {
