@@ -3,6 +3,7 @@
 #include "redis_db.h"
 #include "../hash_table/hash_table.h"
 #include "../lib/list.h"
+#include "../streams/redis_stream.h"
 // Create a new Redis database
 redis_db_t *redis_db_create(int id) {
     redis_db_t *db = malloc(sizeof(redis_db_t));
@@ -85,6 +86,17 @@ redis_object_t *redis_object_create_list(void) {
     
     return redis_object_create(REDIS_LIST, list);
 }
+redis_object_t *redis_object_create_stream(void *stream_ptr) {
+    redis_object_t *obj = calloc(1, sizeof(redis_object_t));
+    if (!obj) return NULL;
+    
+    obj->type = REDIS_STREAM;
+    obj->ptr = stream_ptr;
+    obj->refcount = 1;
+    obj->expiry = 0;
+    
+    return obj;
+}
 
 // Destroy a Redis object
 void redis_object_destroy(redis_object_t *obj) {
@@ -99,23 +111,13 @@ void redis_object_destroy(redis_object_t *obj) {
     // Free the data based on type
     switch (obj->type) {
         case REDIS_STRING:
-            free(obj->ptr);  // Free the string
+            free(obj->ptr);
             break;
-            
         case REDIS_LIST:
-            // TODO: Implement list_destroy((list_t *)obj->ptr);
+            list_destroy((redis_list_t *)obj->ptr);
             break;
-            
-        case REDIS_HASH:
-            hash_table_destroy((hash_table_t *)obj->ptr);
-            break;
-            
-        case REDIS_SET:
-            // TODO: Implement set_destroy((set_t *)obj->ptr);
-            break;
-            
-        case REDIS_ZSET:
-            // TODO: Implement zset_destroy((zset_t *)obj->ptr);
+        case REDIS_STREAM:  // Add this
+            redis_stream_destroy((redis_stream_t *)obj->ptr);
             break;
     }
     
@@ -127,10 +129,8 @@ void redis_object_destroy(redis_object_t *obj) {
 const char *redis_type_to_string(redis_type_t type) {
     switch (type) {
         case REDIS_STRING: return "string";
-        case REDIS_LIST:   return "list";
-        case REDIS_HASH:   return "hash";
-        case REDIS_SET:    return "set";
-        case REDIS_ZSET:   return "zset";
-        default:           return "unknown";
+        case REDIS_LIST: return "list";
+        case REDIS_STREAM: return "stream";  // Add this
+        default: return "unknown";
     }
 }
