@@ -692,8 +692,10 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
 {
     (void)client;
     
-
-    if (argc < 4 || (argc % 2) != 0) {
+    // XADD key ID field value [field value ...]
+    // Minimum: XADD mystream * temp 20 (5 args)
+    // Args after ID must be field-value pairs (even number)
+    if (argc < 5 || (argc - 3) % 2 != 0) {
         return strdup("-ERR wrong number of arguments for 'xadd' command\r\n");
     }
     
