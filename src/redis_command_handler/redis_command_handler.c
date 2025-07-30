@@ -772,6 +772,8 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
                 return strdup("-ERR invalid parameters\r\n");
             case 5:
                 return strdup("-ERR failed to create stream entry\r\n");
+            case 6:  // Special case for 0-0
+                return strdup("-ERR The ID specified in XADD must be greater than 0-0\r\n");
             default:
                 return strdup("-ERR unknown error\r\n");
         }

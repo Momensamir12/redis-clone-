@@ -79,6 +79,11 @@ static int compare_stream_ids(const char *id1, const char *id2) {
 
 // Validate that new_id is greater than last_id
 static int validate_explicit_id(const char *new_id, const char *last_id) {
+    // Special case: 0-0 is never valid
+    if (strcmp(new_id, "0-0") == 0) {
+        return -2; // Special error for 0-0
+    }
+    
     // If stream is empty, ID must be greater than 0-0
     if (!last_id) {
         return compare_stream_ids(new_id, "0-0") > 0 ? 0 : -1;
@@ -87,7 +92,6 @@ static int validate_explicit_id(const char *new_id, const char *last_id) {
     // ID must be greater than last_id
     return compare_stream_ids(new_id, last_id) > 0 ? 0 : -1;
 }
-
 stream_entry_t *stream_entry_create(const char *id, const char **field_names, 
                                    const char **values, size_t field_count) {
     if (!id || field_count == 0) return NULL;
@@ -165,8 +169,13 @@ static char *generate_stream_id(redis_stream_t *stream, const char *id_hint, int
         }
         
         // Validate that it's greater than last ID
-        if (validate_explicit_id(id_hint, stream->last_id) != 0) {
-            *error_code = 2; // ID ordering error
+        int validation_result = validate_explicit_id(id_hint, stream->last_id);
+        if (validation_result != 0) {
+            if (validation_result == -2) {
+                *error_code = 6; // Special case for 0-0
+            } else {
+                *error_code = 2; // ID ordering error
+            }
             return NULL;
         }
         
