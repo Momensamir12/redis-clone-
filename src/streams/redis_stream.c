@@ -43,6 +43,50 @@ void redis_stream_destroy(redis_stream_t *stream) {
     free(stream->last_id);
     free(stream);
 }
+static int parse_stream_id(const char *id_str, uint64_t *timestamp, uint64_t *sequence) {
+    if (!id_str || !timestamp || !sequence) return -1;
+    
+    char *dash = strchr(id_str, '-');
+    if (!dash) return -1;
+    
+    char *endptr;
+    *timestamp = strtoull(id_str, &endptr, 10);
+    if (endptr != dash) return -1;  // Invalid timestamp part
+    
+    *sequence = strtoull(dash + 1, &endptr, 10);
+    if (*endptr != '\0') return -1;  // Invalid sequence part
+    
+    return 0;
+}
+
+// Helper function to compare two stream IDs
+// Returns: -1 if id1 < id2, 0 if equal, 1 if id1 > id2
+static int compare_stream_ids(const char *id1, const char *id2) {
+    uint64_t ts1, seq1, ts2, seq2;
+    
+    if (parse_stream_id(id1, &ts1, &seq1) != 0) return -2; // Invalid id1
+    if (parse_stream_id(id2, &ts2, &seq2) != 0) return -2; // Invalid id2
+    
+    if (ts1 < ts2) return -1;
+    if (ts1 > ts2) return 1;
+    
+    // Same timestamp, compare sequence
+    if (seq1 < seq2) return -1;
+    if (seq1 > seq2) return 1;
+    
+    return 0; // Equal
+}
+
+// Validate that new_id is greater than last_id
+static int validate_explicit_id(const char *new_id, const char *last_id) {
+    // If stream is empty, ID must be greater than 0-0
+    if (!last_id) {
+        return compare_stream_ids(new_id, "0-0") > 0 ? 0 : -1;
+    }
+    
+    // ID must be greater than last_id
+    return compare_stream_ids(new_id, last_id) > 0 ? 0 : -1;
+}
 
 stream_entry_t *stream_entry_create(const char *id, const char **field_names, 
                                    const char **values, size_t field_count) {
@@ -195,6 +239,8 @@ char *redis_stream_add(redis_stream_t *stream, const char *id,
     if (error_code) *error_code = 0; // Success
     return entry_id;  // Caller should free this
 }
+
+
 
 stream_entry_t *redis_stream_get(redis_stream_t *stream, const char *id) {
     if (!stream || !id) return NULL;
