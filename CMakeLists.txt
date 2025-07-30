@@ -28,4 +28,6 @@ add_executable(redis
     src/expiry_utils/expiry_utils.c
     src/lib/list.c
     src/clients/client.c
+    src/streams/redis_stream.c
+    src/lib/radix_tree.c
 )
