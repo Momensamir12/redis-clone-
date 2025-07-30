@@ -39,7 +39,8 @@ void redis_stream_destroy(redis_stream_t *stream);
 
 // Entry operations for THIS stream
 char *redis_stream_add(redis_stream_t *stream, const char *id, 
-                       const char **field_names, const char **values, size_t field_count);
+                       const char **field_names, const char **values, 
+                       size_t field_count, int *error_code);
 stream_entry_t *redis_stream_get(redis_stream_t *stream, const char *id);
 int redis_stream_delete(redis_stream_t *stream, const char *id);
 size_t redis_stream_len(redis_stream_t *stream);

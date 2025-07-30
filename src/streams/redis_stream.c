@@ -105,23 +105,29 @@ void stream_entry_destroy(stream_entry_t *entry) {
     free(entry);
 }
 
-static char *generate_stream_id(redis_stream_t *stream, const char *id_hint) {
+// Update generate_stream_id to return error codes via a parameter
+static char *generate_stream_id(redis_stream_t *stream, const char *id_hint, int *error_code) {
     uint64_t timestamp_ms;
     uint64_t sequence;
     
+    *error_code = 0; // Success by default
+    
     if (id_hint && strcmp(id_hint, "*") != 0) {
-        // Parse provided ID
-        char *dash = strchr(id_hint, '-');
-        if (!dash) return NULL;
-        
-        timestamp_ms = strtoull(id_hint, NULL, 10);
-        sequence = strtoull(dash + 1, NULL, 10);
+        // Explicit ID provided - validate it
+        uint64_t provided_ts, provided_seq;
+        if (parse_stream_id(id_hint, &provided_ts, &provided_seq) != 0) {
+            *error_code = 1; // Invalid format
+            return NULL;
+        }
         
         // Validate that it's greater than last ID
-        if (timestamp_ms < stream->last_timestamp_ms || 
-            (timestamp_ms == stream->last_timestamp_ms && sequence <= stream->last_sequence)) {
-            return NULL;  // ID must be greater than last
+        if (validate_explicit_id(id_hint, stream->last_id) != 0) {
+            *error_code = 2; // ID ordering error
+            return NULL;
         }
+        
+        timestamp_ms = provided_ts;
+        sequence = provided_seq;
     } else {
         // Auto-generate ID
         timestamp_ms = get_current_timestamp_ms();
@@ -143,7 +149,10 @@ static char *generate_stream_id(redis_stream_t *stream, const char *id_hint) {
     
     // Generate ID string
     char *id = malloc(32);
-    if (!id) return NULL;
+    if (!id) {
+        *error_code = 3; // Memory allocation error
+        return NULL;
+    }
     
     snprintf(id, 32, "%llu-%llu", 
              (unsigned long long)timestamp_ms, 
@@ -156,17 +165,26 @@ static char *generate_stream_id(redis_stream_t *stream, const char *id_hint) {
 }
 
 char *redis_stream_add(redis_stream_t *stream, const char *id, 
-                       const char **field_names, const char **values, size_t field_count) {
-    if (!stream || field_count == 0) return NULL;
+                       const char **field_names, const char **values, 
+                       size_t field_count, int *error_code) {
+    if (!stream || field_count == 0) {
+        if (error_code) *error_code = 4; // Invalid parameters
+        return NULL;
+    }
     
     // Generate or validate ID
-    char *entry_id = generate_stream_id(stream, id);
-    if (!entry_id) return NULL;
+    int id_error = 0;
+    char *entry_id = generate_stream_id(stream, id, &id_error);
+    if (!entry_id) {
+        if (error_code) *error_code = id_error;
+        return NULL;
+    }
     
     // Create entry
     stream_entry_t *entry = stream_entry_create(entry_id, field_names, values, field_count);
     if (!entry) {
         free(entry_id);
+        if (error_code) *error_code = 5; // Entry creation failed
         return NULL;
     }
     
@@ -174,6 +192,7 @@ char *redis_stream_add(redis_stream_t *stream, const char *id,
     radix_tree_insert(stream->entries_tree, entry_id, strlen(entry_id), entry);
     stream->length++;
     
+    if (error_code) *error_code = 0; // Success
     return entry_id;  // Caller should free this
 }
 

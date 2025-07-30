@@ -693,8 +693,6 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
     (void)client;
     
     // XADD key ID field value [field value ...]
-    // Minimum: XADD mystream * temp 20 (5 args)
-    // Args after ID must be field-value pairs (even number)
     if (argc < 5 || (argc - 3) % 2 != 0) {
         return strdup("-ERR wrong number of arguments for 'xadd' command\r\n");
     }
@@ -716,8 +714,8 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
     }
     
     for (size_t i = 0; i < field_count; i++) {
-        field_names[i] = args[3 + i * 2];      // field name
-        field_values[i] = args[3 + i * 2 + 1]; // field value
+        field_names[i] = args[3 + i * 2];
+        field_values[i] = args[3 + i * 2 + 1];
     }
     
     // Get or create stream
@@ -755,13 +753,28 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
     }
     
     // Add entry to stream
-    char *generated_id = redis_stream_add(stream, id, field_names, field_values, field_count);
+    int error_code = 0;
+    char *generated_id = redis_stream_add(stream, id, field_names, field_values, field_count, &error_code);
     
     free(field_names);
     free(field_values);
     
     if (!generated_id) {
-        return strdup("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+        // Return specific error message based on error code
+        switch (error_code) {
+            case 1:
+                return strdup("-ERR Invalid stream ID specified as stream command argument\r\n");
+            case 2:
+                return strdup("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+            case 3:
+                return strdup("-ERR out of memory\r\n");
+            case 4:
+                return strdup("-ERR invalid parameters\r\n");
+            case 5:
+                return strdup("-ERR failed to create stream entry\r\n");
+            default:
+                return strdup("-ERR unknown error\r\n");
+        }
     }
     
     // Return the generated ID
