@@ -372,7 +372,6 @@ char *redis_stream_add(redis_stream_t *stream, const char *id,
             *error_code = 5; 
     }
 
-    // Add to radix tree
     radix_tree_insert(stream->entries_tree, entry_id, strlen(entry_id), entry);
     stream->length++;
 
