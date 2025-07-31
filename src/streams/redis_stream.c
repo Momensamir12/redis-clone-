@@ -376,7 +376,7 @@ char *redis_stream_add(redis_stream_t *stream, const char *id,
     stream->length++;
 
     if (error_code)
-        *error_code = 0; // Success
+        *error_code = 0; 
     return entry_id;
 }
 
