@@ -369,8 +369,7 @@ char *redis_stream_add(redis_stream_t *stream, const char *id,
     {
         free(entry_id);
         if (error_code)
-            *error_code = 5; // Entry creation failed
-        return NULL;
+            *error_code = 5; 
     }
 
     // Add to radix tree
