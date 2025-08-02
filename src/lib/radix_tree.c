@@ -4,7 +4,8 @@
 #include <string.h>
 
 static void radix_tree_range_traverse(radix_node_t *node, char *start, char *end, 
-                                     void ***results, int *count, int *capacity);
+                                     void ***results, int *count, int *capacity, 
+                                     char *current_path, size_t path_len);
 
 radix_node_t *radix_node_create(char *key, size_t key_len, void *data) {
     if (!key)
@@ -258,6 +259,59 @@ void *radix_search(radix_tree_t *tree, char *key, size_t key_len) {
     return NULL;
 }
 
+static void radix_tree_range_traverse(radix_node_t *node, char *start, char *end, 
+                                     void ***results, int *count, int *capacity, 
+                                     char *current_path, size_t path_len)
+{
+    if (!node) return;
+    
+    // Build current full path
+    char *full_path = NULL;
+    size_t full_path_len = path_len;
+    
+    if (node->key && node->key_len > 0) {
+        full_path_len = path_len + node->key_len;
+        full_path = malloc(full_path_len + 1);
+        if (!full_path) return;
+        
+        if (path_len > 0) {
+            memcpy(full_path, current_path, path_len);
+        }
+        memcpy(full_path + path_len, node->key, node->key_len);
+        full_path[full_path_len] = '\0';
+    } else {
+        // Root node case
+        full_path = malloc(path_len + 1);
+        if (!full_path) return;
+        if (path_len > 0) {
+            memcpy(full_path, current_path, path_len);
+        }
+        full_path[path_len] = '\0';
+    }
+    
+    // If this node has data and the full path is in range
+    if (node->data && full_path_len > 0) {
+        if (strcmp(full_path, start) >= 0 && strcmp(full_path, end) <= 0) {
+            // Expand array if needed
+            if (*count >= *capacity) {
+                *capacity *= 2;
+                *results = realloc(*results, *capacity * sizeof(void*));
+            }
+            
+            (*results)[*count] = node->data;
+            (*count)++;
+        }
+    }
+    
+    // Traverse children with updated path
+    for (size_t i = 0; i < node->children_count; i++) {
+        radix_tree_range_traverse(node->children[i], start, end, results, count, capacity, 
+                                 full_path, full_path_len);
+    }
+    
+    free(full_path);
+}
+
 void radix_tree_range(radix_tree_t *tree, char *start, char *end, void ***results, int *count)
 {
     if (!tree || !tree->root || !results || !count) {
@@ -274,42 +328,20 @@ void radix_tree_range(radix_tree_t *tree, char *start, char *end, void ***result
         actual_start = "0-0";
     }
     if (strcmp(end, "+") == 0) {
-        actual_end = "999999999999999-999999999999999"; // Very large ID
+        actual_end = "999999999999999-999999999999999";
     }
     
     // Initial capacity
     int capacity = 100;
     *results = malloc(capacity * sizeof(void*));
+    if (!*results) {
+        *count = 0;
+        return;
+    }
     *count = 0;
     
-    // Traverse and collect
-    radix_tree_range_traverse(tree->root, actual_start, actual_end, results, count, &capacity);
-}
-
-static void radix_tree_range_traverse(radix_node_t *node, char *start, char *end, 
-                                     void ***results, int *count, int *capacity)
-{
-    if (!node) return;
-    
-    // If this node has data and key is in range
-    if (node->data && node->key && node->key_len > 0) {
-        if (strcmp(node->key, start) >= 0 && strcmp(node->key, end) <= 0) {
-            // Expand array if needed
-            if (*count >= *capacity) {
-                *capacity *= 2;
-                *results = realloc(*results, *capacity * sizeof(void*));
-            }
-            
-            // Just store the raw data pointer
-            (*results)[*count] = node->data;
-            (*count)++;
-        }
-    }
-    
-    // Traverse children
-    for (size_t i = 0; i < node->children_count; i++) {
-        radix_tree_range_traverse(node->children[i], start, end, results, count, capacity);
-    }
+    // Start traversal with empty path
+    radix_tree_range_traverse(tree->root, actual_start, actual_end, results, count, &capacity, "", 0);
 }
 
 void radix_tree_print_node(radix_node_t *node, int depth) {
