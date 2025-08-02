@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void radix_tree_range_traverse(radix_node_t *node, char *start, char *end, 
+                                     void ***results, int *count, int *capacity);
+
 radix_node_t *radix_node_create(char *key, size_t key_len, void *data) {
     if (!key)
         return NULL;
