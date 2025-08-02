@@ -255,6 +255,60 @@ void *radix_search(radix_tree_t *tree, char *key, size_t key_len) {
     return NULL;
 }
 
+void radix_tree_range(radix_tree_t *tree, char *start, char *end, void ***results, int *count)
+{
+    if (!tree || !tree->root || !results || !count) {
+        *results = NULL;
+        *count = 0;
+        return;
+    }
+    
+    // Handle special cases
+    char *actual_start = start;
+    char *actual_end = end;
+    
+    if (strcmp(start, "-") == 0) {
+        actual_start = "0-0";
+    }
+    if (strcmp(end, "+") == 0) {
+        actual_end = "999999999999999-999999999999999"; // Very large ID
+    }
+    
+    // Initial capacity
+    int capacity = 100;
+    *results = malloc(capacity * sizeof(void*));
+    *count = 0;
+    
+    // Traverse and collect
+    radix_tree_range_traverse(tree->root, actual_start, actual_end, results, count, &capacity);
+}
+
+static void radix_tree_range_traverse(radix_node_t *node, char *start, char *end, 
+                                     void ***results, int *count, int *capacity)
+{
+    if (!node) return;
+    
+    // If this node has data and key is in range
+    if (node->data && node->key && node->key_len > 0) {
+        if (strcmp(node->key, start) >= 0 && strcmp(node->key, end) <= 0) {
+            // Expand array if needed
+            if (*count >= *capacity) {
+                *capacity *= 2;
+                *results = realloc(*results, *capacity * sizeof(void*));
+            }
+            
+            // Just store the raw data pointer
+            (*results)[*count] = node->data;
+            (*count)++;
+        }
+    }
+    
+    // Traverse children
+    for (size_t i = 0; i < node->children_count; i++) {
+        radix_tree_range_traverse(node->children[i], start, end, results, count, capacity);
+    }
+}
+
 void radix_tree_print_node(radix_node_t *node, int depth) {
     if (!node) return;
     
