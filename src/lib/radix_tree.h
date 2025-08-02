@@ -29,9 +29,8 @@ void radix_tree_destroy(radix_tree_t *tree);
 // Utility functions
 void radix_tree_print(radix_tree_t *tree);
 size_t radix_tree_size(radix_tree_t *tree);
-
-// Internal helper functions (exposed for testing/debugging)
 size_t common_prefix_len(char *c1, char *c2, size_t len1, size_t len2);
+void radix_tree_range(radix_tree_t *tree, char *start, char *end, char ***results, int *count);
 radix_node_t *find_child_with_prefix(radix_node_t *node, char *key, size_t key_len, size_t *common_prefix);
 
 #endif // RADIX_TREE_H

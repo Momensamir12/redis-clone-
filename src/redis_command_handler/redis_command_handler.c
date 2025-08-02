@@ -34,6 +34,7 @@ static redis_command_t commands[] = {
     {"blpop", handle_blpop_command, 3, -1},
     {"type", handle_type_command, 2, 2},
     {"xadd", handle_xadd_command, 4, -1}, 
+    {"xrange", handle_xrange_command, 4, 6},
     {NULL, NULL, 0, 0} // Sentinel
 };
 
@@ -782,6 +783,73 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
     // Return the generated ID
     char *response = encode_bulk_string(generated_id);
     free(generated_id);
+    
+    return response;
+}
+
+char *handle_xrange_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)client;
+    
+    if (argc < 4) {
+        return strdup("-ERR wrong number of arguments for 'xrange' command\r\n");
+    }
+    
+    char *key = args[1];
+    char *start_id = args[2];
+    char *end_id = args[3];
+    
+    // Get stream from database
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    if (!obj) {
+        return strdup("*0\r\n");
+    }
+    
+    if (obj->type != REDIS_STREAM) {
+        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+    }
+    
+    redis_stream_t *stream = (redis_stream_t *)obj->ptr;
+    
+    void **raw_results = NULL;
+    int result_count = 0;
+    
+    radix_tree_range(stream->entries_tree, start_id, end_id, &raw_results, &result_count);
+    
+    if (!raw_results || result_count == 0) {
+        free(raw_results);
+        return strdup("*0\r\n");
+    }
+    
+    char **formatted_results = malloc(result_count * sizeof(char*));
+    
+    for (int i = 0; i < result_count; i++) {
+        stream_entry_t *entry = (stream_entry_t*)raw_results[i];
+        
+        int str_len = strlen(entry->id) + 10;
+        for (size_t j = 0; j < entry->field_count; j++) {
+            str_len += strlen(entry->fields[j].name) + strlen(entry->fields[j].value) + 4;
+        }
+        
+        char *formatted = malloc(str_len);
+        int pos = sprintf(formatted, "%s", entry->id);
+        
+        for (size_t j = 0; j < entry->field_count; j++) {
+            pos += sprintf(formatted + pos, " %s %s", 
+                          entry->fields[j].name, entry->fields[j].value);
+        }
+        
+        formatted_results[i] = formatted;
+    }
+    
+    char *response = encode_resp_array(formatted_results, result_count);
+    
+
+    for (int i = 0; i < result_count; i++) {
+        free(formatted_results[i]);
+    }
+    free(formatted_results);
+    free(raw_results);
     
     return response;
 }
