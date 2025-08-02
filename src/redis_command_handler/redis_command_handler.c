@@ -13,6 +13,7 @@
 #include "../clients/client.h"
 #include <math.h>
 #include "../streams/redis_stream.h"
+#include "../lib/radix_tree.h"
 
 #define NULL_RESP_VALUE "$-1\r\n"
 
@@ -815,7 +816,7 @@ char *handle_xrange_command(redis_server_t *server, char **args, int argc, void 
     int result_count = 0;
     
     radix_tree_range(stream->entries_tree, start_id, end_id, &raw_results, &result_count);
-    
+
     if (!raw_results || result_count == 0) {
         free(raw_results);
         return strdup("*0\r\n");
