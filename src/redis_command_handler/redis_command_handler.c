@@ -812,44 +812,52 @@ char *handle_xrange_command(redis_server_t *server, char **args, int argc, void 
     
     redis_stream_t *stream = (redis_stream_t *)obj->ptr;
     
+    // Get range results from radix tree
     void **raw_results = NULL;
     int result_count = 0;
     
     radix_tree_range(stream->entries_tree, start_id, end_id, &raw_results, &result_count);
-
+    
     if (!raw_results || result_count == 0) {
         free(raw_results);
         return strdup("*0\r\n");
     }
     
-    char **formatted_results = malloc(result_count * sizeof(char*));
+    // Build RESP response manually for the expected format
+    size_t response_size = 1024;
+    char *response = malloc(response_size);
+    int pos = 0;
+    
+    pos += sprintf(response + pos, "*%d\r\n", result_count);
     
     for (int i = 0; i < result_count; i++) {
         stream_entry_t *entry = (stream_entry_t*)raw_results[i];
         
-        int str_len = strlen(entry->id) + 10;
+        // Each entry is [ID, [field1, value1, field2, value2, ...]]
+        pos += sprintf(response + pos, "*2\r\n");
+        
+        // Add ID as bulk string
+        pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(entry->id), entry->id);
+        
+        // Add fields as array
+        pos += sprintf(response + pos, "*%zu\r\n", entry->field_count * 2);
+        
         for (size_t j = 0; j < entry->field_count; j++) {
-            str_len += strlen(entry->fields[j].name) + strlen(entry->fields[j].value) + 4;
+            // Field name
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
+                          strlen(entry->fields[j].name), entry->fields[j].name);
+            // Field value
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
+                          strlen(entry->fields[j].value), entry->fields[j].value);
         }
         
-        char *formatted = malloc(str_len);
-        int pos = sprintf(formatted, "%s", entry->id);
-        
-        for (size_t j = 0; j < entry->field_count; j++) {
-            pos += sprintf(formatted + pos, " %s %s", 
-                          entry->fields[j].name, entry->fields[j].value);
+        // Reallocate if needed
+        if (pos > response_size - 1000) {
+            response_size *= 2;
+            response = realloc(response, response_size);
         }
-        
-        formatted_results[i] = formatted;
     }
     
-    char *response = encode_resp_array(formatted_results, result_count);
-    
-
-    for (int i = 0; i < result_count; i++) {
-        free(formatted_results[i]);
-    }
-    free(formatted_results);
     free(raw_results);
     
     return response;
