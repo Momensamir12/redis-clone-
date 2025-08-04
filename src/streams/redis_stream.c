@@ -391,3 +391,33 @@ size_t redis_stream_len(redis_stream_t *stream)
 {
     return stream ? stream->length : 0;
 }
+
+// Helper function to get the next stream ID after a given ID
+int get_next_stream_id(const char *current_id, char *next_id, size_t buffer_size)
+{
+    if (!current_id || !next_id) return -1;
+    
+    uint64_t timestamp, sequence;
+    if (parse_stream_id(current_id, &timestamp, &sequence) != 0) {
+        return -1;
+    }
+    
+    // Increment sequence
+    if (sequence < UINT64_MAX) {
+        sequence++;
+    } else {
+        // Sequence overflowed, increment timestamp and reset sequence
+        if (timestamp < UINT64_MAX) {
+            timestamp++;
+            sequence = 0;
+        } else {
+            // Both maxed out, return error
+            return -1;
+        }
+    }
+    
+    snprintf(next_id, buffer_size, "%llu-%llu", 
+             (unsigned long long)timestamp, (unsigned long long)sequence);
+    
+    return 0;
+}
