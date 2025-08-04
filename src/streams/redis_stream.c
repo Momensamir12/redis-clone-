@@ -95,7 +95,7 @@ static int compare_stream_ids(const char *id1, const char *id2)
     return 0; 
 }
 
-// Validate that new_id is greater than last_id
+
 static int validate_explicit_id(const char *new_id, const char *last_id)
 {
     // Special case: 0-0 is never valid
@@ -104,7 +104,6 @@ static int validate_explicit_id(const char *new_id, const char *last_id)
         return -2; // Special error for 0-0
     }
 
-    // If stream is empty, ID must be greater than 0-0
     if (!last_id)
     {
         return compare_stream_ids(new_id, "0-0") > 0 ? 0 : -1;

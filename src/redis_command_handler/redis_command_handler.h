@@ -33,6 +33,7 @@ char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *
 char *handle_type_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_xrange_command(redis_server_t *server, char **args, int argc, void *client);
+char *handle_xread_command(redis_server_t *server, char **args, int argc, void *client);
 
 void check_blocked_clients_timeout(redis_server_t *server);
 

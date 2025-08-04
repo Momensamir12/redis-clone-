@@ -34,8 +34,9 @@ static redis_command_t commands[] = {
     {"lrange", handle_lrange_command, 4, 4},
     {"blpop", handle_blpop_command, 3, -1},
     {"type", handle_type_command, 2, 2},
-    {"xadd", handle_xadd_command, 4, -1}, 
+    {"xadd", handle_xadd_command, 4, -1},
     {"xrange", handle_xrange_command, 4, 6},
+    {"xread", handle_xread_command, 4, -1},
     {NULL, NULL, 0, 0} // Sentinel
 };
 
@@ -693,172 +694,338 @@ char *handle_type_command(redis_server_t *server, char **args, int argc, void *c
 char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)client;
-    
+
     // XADD key ID field value [field value ...]
-    if (argc < 5 || (argc - 3) % 2 != 0) {
+    if (argc < 5 || (argc - 3) % 2 != 0)
+    {
         return strdup("-ERR wrong number of arguments for 'xadd' command\r\n");
     }
-    
+
     char *key = args[1];
     char *id = args[2];
-    
+
     // Calculate number of field-value pairs
     size_t field_count = (argc - 3) / 2;
-    
+
     // Extract field names and values
-    const char **field_names = malloc(field_count * sizeof(char*));
-    const char **field_values = malloc(field_count * sizeof(char*));
-    
-    if (!field_names || !field_values) {
+    const char **field_names = malloc(field_count * sizeof(char *));
+    const char **field_values = malloc(field_count * sizeof(char *));
+
+    if (!field_names || !field_values)
+    {
         free(field_names);
         free(field_values);
         return strdup("-ERR out of memory\r\n");
     }
-    
-    for (size_t i = 0; i < field_count; i++) {
+
+    for (size_t i = 0; i < field_count; i++)
+    {
         field_names[i] = args[3 + i * 2];
         field_values[i] = args[3 + i * 2 + 1];
     }
-    
+
     // Get or create stream
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
     redis_stream_t *stream = NULL;
-    
-    if (!obj) {
+
+    if (!obj)
+    {
         // Create new stream
         stream = redis_stream_create();
-        if (!stream) {
+        if (!stream)
+        {
             free(field_names);
             free(field_values);
             return strdup("-ERR failed to create stream\r\n");
         }
-        
+
         // Create redis object wrapper
         obj = redis_object_create_stream(stream);
-        if (!obj) {
+        if (!obj)
+        {
             redis_stream_destroy(stream);
             free(field_names);
             free(field_values);
             return strdup("-ERR failed to create stream object\r\n");
         }
-        
+
         // Store in database
         hash_table_set(server->db->dict, strdup(key), obj);
-    } else {
+    }
+    else
+    {
         // Check if it's a stream
-        if (obj->type != REDIS_STREAM) {
+        if (obj->type != REDIS_STREAM)
+        {
             free(field_names);
             free(field_values);
             return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
         }
         stream = (redis_stream_t *)obj->ptr;
     }
-    
+
     // Add entry to stream
     int error_code = 0;
     char *generated_id = redis_stream_add(stream, id, field_names, field_values, field_count, &error_code);
-    
+
     free(field_names);
     free(field_values);
-    
-    if (!generated_id) {
+
+    if (!generated_id)
+    {
         // Return specific error message based on error code
-        switch (error_code) {
-            case 1:
-                return strdup("-ERR Invalid stream ID specified as stream command argument\r\n");
-            case 2:
-                return strdup("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
-            case 3:
-                return strdup("-ERR out of memory\r\n");
-            case 4:
-                return strdup("-ERR invalid parameters\r\n");
-            case 5:
-                return strdup("-ERR failed to create stream entry\r\n");
-            case 6:  // Special case for 0-0
-                return strdup("-ERR The ID specified in XADD must be greater than 0-0\r\n");
-            default:
-                return strdup("-ERR unknown error\r\n");
+        switch (error_code)
+        {
+        case 1:
+            return strdup("-ERR Invalid stream ID specified as stream command argument\r\n");
+        case 2:
+            return strdup("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n");
+        case 3:
+            return strdup("-ERR out of memory\r\n");
+        case 4:
+            return strdup("-ERR invalid parameters\r\n");
+        case 5:
+            return strdup("-ERR failed to create stream entry\r\n");
+        case 6: // Special case for 0-0
+            return strdup("-ERR The ID specified in XADD must be greater than 0-0\r\n");
+        default:
+            return strdup("-ERR unknown error\r\n");
         }
     }
-    
+
     // Return the generated ID
     char *response = encode_bulk_string(generated_id);
     free(generated_id);
-    
+
     return response;
 }
 
 char *handle_xrange_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)client;
-    
-    if (argc < 4) {
+
+    if (argc < 4)
+    {
         return strdup("-ERR wrong number of arguments for 'xrange' command\r\n");
     }
-    
+
     char *key = args[1];
     char *start_id = args[2];
     char *end_id = args[3];
-    
+
     // Get stream from database
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
-    if (!obj) {
+    if (!obj)
+    {
         return strdup("*0\r\n");
     }
-    
-    if (obj->type != REDIS_STREAM) {
+
+    if (obj->type != REDIS_STREAM)
+    {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
     }
-    
+
     redis_stream_t *stream = (redis_stream_t *)obj->ptr;
-    
+
     // Get range results from radix tree
     void **raw_results = NULL;
     int result_count = 0;
-    
+
     radix_tree_range(stream->entries_tree, start_id, end_id, &raw_results, &result_count);
-    
-    if (!raw_results || result_count == 0) {
+
+    if (!raw_results || result_count == 0)
+    {
         free(raw_results);
         return strdup("*0\r\n");
     }
-    
+
     // Build RESP response manually for the expected format
     size_t response_size = 1024;
     char *response = malloc(response_size);
     int pos = 0;
-    
+
     pos += sprintf(response + pos, "*%d\r\n", result_count);
-    
-    for (int i = 0; i < result_count; i++) {
-        stream_entry_t *entry = (stream_entry_t*)raw_results[i];
-        
+
+    for (int i = 0; i < result_count; i++)
+    {
+        stream_entry_t *entry = (stream_entry_t *)raw_results[i];
+
         // Each entry is [ID, [field1, value1, field2, value2, ...]]
         pos += sprintf(response + pos, "*2\r\n");
-        
+
         // Add ID as bulk string
         pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(entry->id), entry->id);
-        
+
         // Add fields as array
         pos += sprintf(response + pos, "*%zu\r\n", entry->field_count * 2);
-        
-        for (size_t j = 0; j < entry->field_count; j++) {
+
+        for (size_t j = 0; j < entry->field_count; j++)
+        {
             // Field name
-            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
-                          strlen(entry->fields[j].name), entry->fields[j].name);
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
+                           strlen(entry->fields[j].name), entry->fields[j].name);
             // Field value
-            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
-                          strlen(entry->fields[j].value), entry->fields[j].value);
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
+                           strlen(entry->fields[j].value), entry->fields[j].value);
         }
-        
+
         // Reallocate if needed
-        if (pos > response_size - 1000) {
+        if (pos > response_size - 1000)
+        {
             response_size *= 2;
             response = realloc(response, response_size);
         }
     }
-    
+
     free(raw_results);
-    
+
+    return response;
+}
+
+char *handle_xread_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)client;
+
+    if (argc < 4)
+    {
+        return strdup("-ERR wrong number of arguments for 'xread' command\r\n");
+    }
+
+    // Find STREAMS keyword
+    int streams_pos = -1;
+    for (int i = 1; i < argc; i++)
+    {
+        if (strcasecmp(args[i], "streams") == 0)
+        {
+            streams_pos = i;
+            break;
+        }
+    }
+
+    if (streams_pos == -1)
+    {
+        return strdup("-ERR syntax error\r\n");
+    }
+
+    // Calculate number of streams
+    int remaining_args = argc - streams_pos - 1;
+    if (remaining_args % 2 != 0)
+    {
+        return strdup("-ERR Unbalanced XREAD list of streams\r\n");
+    }
+
+    int num_streams = remaining_args / 2;
+    if (num_streams == 0)
+    {
+        return strdup("-ERR wrong number of arguments for 'xread' command\r\n");
+    }
+
+    // Extract stream names and start IDs
+    char **stream_keys = &args[streams_pos + 1];
+    char **start_ids = &args[streams_pos + 1 + num_streams];
+
+    // Build response - first count streams with data
+    int streams_with_data = 0;
+    void ***all_results = malloc(num_streams * sizeof(void **));
+    int *all_counts = malloc(num_streams * sizeof(int));
+
+    // Get results for each stream
+    for (int i = 0; i < num_streams; i++)
+    {
+        all_results[i] = NULL;
+        all_counts[i] = 0;
+
+        redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, stream_keys[i]);
+        if (!obj || obj->type != REDIS_STREAM)
+        {
+            continue;
+        }
+
+        redis_stream_t *stream = (redis_stream_t *)obj->ptr;
+
+        // Get entries AFTER start_id (exclusive)
+        char next_id[64];
+        if (get_next_stream_id(start_ids[i], next_id, sizeof(next_id)) == 0)
+        {
+            radix_tree_range(stream->entries_tree, next_id, "999999999999999-999999999999999",
+                             &all_results[i], &all_counts[i]);
+
+            if (all_counts[i] > 0)
+            {
+                streams_with_data++;
+            }
+        }
+    }
+
+    if (streams_with_data == 0)
+    {
+        // Cleanup and return empty
+        for (int i = 0; i < num_streams; i++)
+        {
+            free(all_results[i]);
+        }
+        free(all_results);
+        free(all_counts);
+        return strdup("*0\r\n");
+    }
+
+    // Build RESP response manually
+    size_t response_size = 4096;
+    char *response = malloc(response_size);
+    int pos = 0;
+
+    pos += sprintf(response + pos, "*%d\r\n", streams_with_data);
+
+    for (int i = 0; i < num_streams; i++)
+    {
+        if (all_counts[i] == 0)
+            continue;
+
+        // Stream entry: [stream_name, [entries]]
+        pos += sprintf(response + pos, "*2\r\n");
+
+        // Add stream name
+        pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(stream_keys[i]), stream_keys[i]);
+
+        // Add entries array
+        pos += sprintf(response + pos, "*%d\r\n", all_counts[i]);
+
+        for (int j = 0; j < all_counts[i]; j++)
+        {
+            stream_entry_t *entry = (stream_entry_t *)all_results[i][j];
+
+            // Each entry is [ID, [field1, value1, field2, value2, ...]]
+            pos += sprintf(response + pos, "*2\r\n");
+
+            // Add ID
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(entry->id), entry->id);
+
+            // Add fields array
+            pos += sprintf(response + pos, "*%zu\r\n", entry->field_count * 2);
+
+            for (size_t k = 0; k < entry->field_count; k++)
+            {
+                // Field name
+                pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
+                               strlen(entry->fields[k].name), entry->fields[k].name);
+                pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
+                               strlen(entry->fields[k].value), entry->fields[k].value);
+            }
+        }
+
+        if (pos > response_size - 1000)
+        {
+            response_size *= 2;
+            response = realloc(response, response_size);
+        }
+    }
+
+    for (int i = 0; i < num_streams; i++)
+    {
+        free(all_results[i]);
+    }
+    free(all_results);
+    free(all_counts);
+
     return response;
 }
