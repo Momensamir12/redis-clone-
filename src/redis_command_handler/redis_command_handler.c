@@ -782,8 +782,8 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
     char *response = encode_bulk_string(generated_id);
 
     /*check if any clients are blocked on this stream , if so send the new entry*/
-    char * args_r[] = {"xrange", key, generated_id, "999999999999999-999999999999999"};
-    char * b_response = handle_xrange_command(server, &args_r, 4, c);
+    char ** args_r[] = {"xrange", key, generated_id, "999999999999999-999999999999999"};
+    char * b_response = handle_xrange_command(server, args_r, 4, c);
     check_blocked_clients_for_key(server, key, b_response);
     free(args_r);
     free(b_response);
