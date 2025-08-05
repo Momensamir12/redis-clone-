@@ -173,6 +173,33 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
     free(resp_buffer);
     return response;
 }
+void client_unblock_stream(client_t *client)
+{
+    if (!client) return;
+    
+    // Clean up XREAD-specific data
+    if (client->xread_streams) {
+        for (int i = 0; i < client->xread_num_streams; i++) {
+            free(client->xread_streams[i]);
+        }
+        free(client->xread_streams);
+        client->xread_streams = NULL;
+    }
+    
+    if (client->xread_start_ids) {
+        for (int i = 0; i < client->xread_num_streams; i++) {
+            free(client->xread_start_ids[i]);
+        }
+        free(client->xread_start_ids);
+        client->xread_start_ids = NULL;
+    }
+    
+    client->xread_num_streams = 0;
+    client->stream_block = false;
+    
+    // Call the regular unblock function to handle common blocking cleanup
+    client_unblock(client);
+}
 
 // Command handlers
 static void check_blocked_clients_for_key(redis_server_t *server, const char *key, const char *notify)
