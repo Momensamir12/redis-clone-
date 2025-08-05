@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <stdbool.h>
 #include "../lib/list.h"
 
 typedef struct client {
