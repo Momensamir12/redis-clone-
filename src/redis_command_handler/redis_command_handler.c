@@ -646,30 +646,37 @@ void check_blocked_clients_timeout(redis_server_t *server)
 
     time_t now = time(NULL);
     list_node_t *node = server->blocked_clients->head;
-     printf("Checking timeouts: current time=%ld\n", now);
+    
+    printf("Checking timeouts: current time=%ld, blocked clients=%zu\n", 
+           now, list_length(server->blocked_clients));
 
     while (node)
     {
         list_node_t *next = node->next;
         client_t *client = (client_t *)node->data;
-        
+
+        printf("Client fd=%d: is_blocked=%d, stream_block=%d, block_timeout=%ld\n", 
+               client->fd, client->is_blocked, client->stream_block, client->block_timeout);
+
         // Only check timeout if block_timeout > 0 (0 means wait forever)
         if (client->block_timeout > 0 && client->block_timeout <= now)
         {
-            printf("Client fd=%d timed out\n", client->fd);
-            printf("Client fd=%d: timeout=%ld, remaining=%ld seconds\n", 
-               client->fd, client->block_timeout, client->block_timeout - now);
+            printf("Client fd=%d timed out! timeout=%ld, now=%ld\n", 
+                   client->fd, client->block_timeout, now);
+
             // Send nil response for timeout based on blocking type
             if (client->stream_block) {
                 // For XREAD timeout, send null array
                 const char *nil_response = "*-1\r\n";
                 send(client->fd, nil_response, strlen(nil_response), MSG_NOSIGNAL);
                 client_unblock_stream(client);
+                printf("Sent timeout response to XREAD client fd=%d\n", client->fd);
             } else {
                 // For BLPOP timeout, send null array  
                 const char *nil_response = "*-1\r\n";
                 send(client->fd, nil_response, strlen(nil_response), MSG_NOSIGNAL);
                 client_unblock(client);
+                printf("Sent timeout response to BLPOP client fd=%d\n", client->fd);
             }
             
             remove_client_from_list(server->blocked_clients, client);
@@ -1047,49 +1054,44 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
     printf("XREAD: is_blocking=%d, streams_with_data=%d\n", is_blocking, streams_with_data);
 
     // If blocking and no data, block the client
-    if (is_blocking && streams_with_data == 0)
-    {
-        printf("Blocking client fd=%d on XREAD\n", c->fd);
-        
-        // Make sure client is fully reset before blocking
-        if (c->xread_streams) {
-            for (int i = 0; i < c->xread_num_streams; i++) {
-                free(c->xread_streams[i]);
-            }
-            free(c->xread_streams);
-        }
-        if (c->xread_start_ids) {
-            for (int i = 0; i < c->xread_num_streams; i++) {
-                free(c->xread_start_ids[i]);
-            }
-            free(c->xread_start_ids);
-        }
-        
-        // Store XREAD command info in client for later processing
-        c->xread_streams = malloc(num_streams * sizeof(char*));
-        c->xread_start_ids = malloc(num_streams * sizeof(char*));
-        c->xread_num_streams = num_streams;
-        
-        for (int i = 0; i < num_streams; i++)
-        {
-            c->xread_streams[i] = strdup(stream_keys[i]);
-            c->xread_start_ids[i] = strdup(start_ids[i]);
-        }
-        
-        client_block(c, stream_keys[0], timeout);  // Use first stream as blocked key
-        c->stream_block = true;
-        add_client_to_list(server->blocked_clients, c);
-        
-        // Cleanup
-        for (int i = 0; i < num_streams; i++)
-        {
-            free(all_results[i]);
-        }
-        free(all_results);
-        free(all_counts);
-        
-        return NULL; // No response - client is blocked
+   // In handle_xread_command, in the blocking section:
+if (is_blocking && streams_with_data == 0)
+{
+    time_t timeout_timestamp = 0;
+    if (timeout > 0) {
+        timeout_timestamp = time(NULL) + timeout;
+        printf("Setting timeout for client fd=%d: current=%ld + %d = %ld\n", 
+               c->fd, time(NULL), timeout, timeout_timestamp);
     }
+    
+    printf("Blocking client fd=%d on XREAD for %d seconds (until %ld)\n", 
+           c->fd, timeout, timeout_timestamp);
+    
+    // Store XREAD command info in client for later processing
+    c->xread_streams = malloc(num_streams * sizeof(char*));
+    c->xread_start_ids = malloc(num_streams * sizeof(char*));
+    c->xread_num_streams = num_streams;
+    
+    for (int i = 0; i < num_streams; i++)
+    {
+        c->xread_streams[i] = strdup(stream_keys[i]);
+        c->xread_start_ids[i] = strdup(start_ids[i]);
+    }
+    
+    client_block(c, stream_keys[0], timeout_timestamp);  // Pass the timestamp, not duration
+    c->stream_block = true;
+    add_client_to_list(server->blocked_clients, c);
+    
+    // Cleanup
+    for (int i = 0; i < num_streams; i++)
+    {
+        free(all_results[i]);
+    }
+    free(all_results);
+    free(all_counts);
+    
+    return NULL; // No response - client is blocked
+}
 
     printf("XREAD: Returning response, streams_with_data=%d\n", streams_with_data);
     
