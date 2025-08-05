@@ -173,33 +173,6 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
     free(resp_buffer);
     return response;
 }
-void client_unblock_stream(client_t *client)
-{
-    if (!client) return;
-    
-    // Clean up XREAD-specific data
-    if (client->xread_streams) {
-        for (int i = 0; i < client->xread_num_streams; i++) {
-            free(client->xread_streams[i]);
-        }
-        free(client->xread_streams);
-        client->xread_streams = NULL;
-    }
-    
-    if (client->xread_start_ids) {
-        for (int i = 0; i < client->xread_num_streams; i++) {
-            free(client->xread_start_ids[i]);
-        }
-        free(client->xread_start_ids);
-        client->xread_start_ids = NULL;
-    }
-    
-    client->xread_num_streams = 0;
-    client->stream_block = false;
-    
-    // Call the regular unblock function to handle common blocking cleanup
-    client_unblock(client);
-}
 
 // Command handlers
 static void check_blocked_clients_for_key(redis_server_t *server, const char *key, const char *notify)
@@ -852,6 +825,8 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
     /*check if any clients are blocked on this stream , if so send the new entry*/
     check_blocked_clients_for_stream(server, key, generated_id);
 
+
+
     free(generated_id);
 
     return response;
@@ -1055,6 +1030,7 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
             }
         }
     }
+    printf("XREAD: is_blocking=%d, streams_with_data=%d\n", is_blocking, streams_with_data);
 
     // If blocking and no data, block the client
     if (is_blocking && streams_with_data == 0)
@@ -1063,7 +1039,8 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         c->xread_streams = malloc(num_streams * sizeof(char*));
         c->xread_start_ids = malloc(num_streams * sizeof(char*));
         c->xread_num_streams = num_streams;
-        
+        printf("Blocking client fd=%d on XREAD\n", c->fd);
+
         for (int i = 0; i < num_streams; i++)
         {
             c->xread_streams[i] = strdup(stream_keys[i]);
