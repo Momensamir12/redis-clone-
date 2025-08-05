@@ -217,7 +217,6 @@ static void check_blocked_clients_for_key(redis_server_t *server, const char *ke
                                blocked_client->fd, key);
                     }
                 }
-                return true;
             }
             if(obj && obj->type == REDIS_STREAM)
             {
@@ -783,10 +782,10 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
     char *response = encode_bulk_string(generated_id);
 
     /*check if any clients are blocked on this stream , if so send the new entry*/
-    char * args[] = {"xrange", key, generated_id, "999999999999999-999999999999999"};
-    char * b_response = handle_xrange_command(server, &args, 4, c);
+    char * args_r[] = {"xrange", key, generated_id, "999999999999999-999999999999999"};
+    char * b_response = handle_xrange_command(server, &args_r, 4, c);
     check_blocked_clients_for_key(server, key, b_response);
-    free(args);
+    free(args_r);
     free(b_response);
         
 
@@ -972,6 +971,7 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         {
             c->blocked_key = stream_keys[i];
             client_block(c, stream_keys[i], timeout);
+            add_client_to_list(server->blocked_clients, c);
             break;
         }
         if (!obj || obj->type != REDIS_STREAM)
