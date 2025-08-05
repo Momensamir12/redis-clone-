@@ -741,7 +741,6 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
     char *key = args[1];
     char *id = args[2];
 
-    // Calculate number of field-value pairs
     size_t field_count = (argc - 3) / 2;
 
     // Extract field names and values
