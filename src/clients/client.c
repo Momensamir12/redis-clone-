@@ -40,22 +40,31 @@ void free_client(client_t *client) {
     free(client);
 }
 
-void client_block(client_t *client, const char *key, int timeout) {
+void client_block(client_t *client, const char *key, time_t timeout_timestamp)
+{
     if (!client) return;
     
-    client->is_blocked = 1;
+    printf("client_block: BEFORE - Client fd=%d, current block_timeout=%ld\n", 
+           client->fd, client->block_timeout);
     
-    if (timeout > 0) {
-        client->block_timeout = time(NULL) + timeout;
-    } else {
-        client->block_timeout = 0;
-    }
+    client->is_blocked = true;
     
+    // Clear any existing blocked key
     if (client->blocked_key) {
         free(client->blocked_key);
+        client->blocked_key = NULL;
     }
     
-    client->blocked_key = key ? strdup(key) : NULL;
+    // Set new blocked key if provided
+    if (key) {
+        client->blocked_key = strdup(key);
+    }
+    
+    // Set the timeout
+    client->block_timeout = timeout_timestamp;
+    
+    printf("client_block: AFTER - Client fd=%d blocked until %ld (current: %ld)\n", 
+           client->fd, client->block_timeout, time(NULL));
 }
 
 void client_unblock(client_t *client) {

@@ -846,28 +846,36 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
 static int extract_timeout(char *timeout_st)
 {
     double timeout_float = atof(timeout_st);
-    int timeout;
+    int timeout_seconds;
 
+    printf("extract_timeout: input='%s', parsed=%f milliseconds\n", timeout_st, timeout_float);
+
+    // Convert milliseconds to seconds
+    double timeout_sec_float = timeout_float / 1000.0;
+    
     // Handle fractional seconds
-    if (timeout_float == 0.0)
+    if (timeout_sec_float == 0.0)
     {
-        timeout = 0; // Wait forever
+        timeout_seconds = 0; // Wait forever
     }
-    else if (timeout_float > 0.0 && timeout_float < 1.0)
+    else if (timeout_sec_float > 0.0 && timeout_sec_float < 1.0)
     {
-        timeout = 1; // Minimum 1 second for fractional values
+        timeout_seconds = 1; // Minimum 1 second for fractional values  
     }
     else
     {
-        timeout = (int)timeout_float; // Truncate to seconds
+        timeout_seconds = (int)timeout_sec_float; // Truncate to seconds
         // Add 1 if there's a fractional part
-        if (timeout_float > timeout)
+        if (timeout_sec_float > timeout_seconds)
         {
-            timeout++;
+            timeout_seconds++;
         }
     }
-    return timeout;
+    
+    printf("extract_timeout: %f ms -> %d seconds\n", timeout_float, timeout_seconds);
+    return timeout_seconds;
 }
+
 char *handle_xrange_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)client;
