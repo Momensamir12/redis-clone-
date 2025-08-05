@@ -949,6 +949,12 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         return strdup("-ERR wrong number of arguments for 'xread' command\r\n");
     }
 
+    // Check if client is already blocked - but only if it's still in blocking state
+    if (c->is_blocked && (c->stream_block || c->blocked_key)) {
+        printf("Client fd=%d is already blocked\n", c->fd);
+        return strdup("-ERR client already blocked\r\n");
+    }
+
     int timeout = -1;
     bool is_blocking = false;
     
@@ -965,6 +971,8 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         }
     }
 
+    // ... rest of your existing code remains the same ...
+    
     // Find STREAMS keyword
     int streams_pos = -1;
     for (int i = 1; i < argc; i++)
@@ -1030,17 +1038,33 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
             }
         }
     }
+
     printf("XREAD: is_blocking=%d, streams_with_data=%d\n", is_blocking, streams_with_data);
 
     // If blocking and no data, block the client
     if (is_blocking && streams_with_data == 0)
     {
+        printf("Blocking client fd=%d on XREAD\n", c->fd);
+        
+        // Make sure client is fully reset before blocking
+        if (c->xread_streams) {
+            for (int i = 0; i < c->xread_num_streams; i++) {
+                free(c->xread_streams[i]);
+            }
+            free(c->xread_streams);
+        }
+        if (c->xread_start_ids) {
+            for (int i = 0; i < c->xread_num_streams; i++) {
+                free(c->xread_start_ids[i]);
+            }
+            free(c->xread_start_ids);
+        }
+        
         // Store XREAD command info in client for later processing
         c->xread_streams = malloc(num_streams * sizeof(char*));
         c->xread_start_ids = malloc(num_streams * sizeof(char*));
         c->xread_num_streams = num_streams;
-        printf("Blocking client fd=%d on XREAD\n", c->fd);
-
+        
         for (int i = 0; i < num_streams; i++)
         {
             c->xread_streams[i] = strdup(stream_keys[i]);
@@ -1061,6 +1085,10 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         
         return NULL; // No response - client is blocked
     }
+
+    printf("XREAD: Returning response, streams_with_data=%d\n", streams_with_data);
+    
+    // ... rest of response building code remains the same ...
 
     if (streams_with_data == 0)
     {
