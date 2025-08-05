@@ -227,6 +227,46 @@ static void check_blocked_clients_for_key(redis_server_t *server, const char *ke
     }
 }
 
+static void check_blocked_clients_for_stream(redis_server_t *server, const char *key, const char *new_id)
+{
+    if (!server || !server->blocked_clients || !key || !new_id)
+        return;
+
+    list_node_t *node = server->blocked_clients->head;
+    while (node)
+    {
+        list_node_t *next = node->next;
+        client_t *blocked_client = (client_t *)node->data;
+
+        if (blocked_client->stream_block && blocked_client->xread_streams)
+        {
+            // Check if this stream is in the client's XREAD list
+            for (int i = 0; i < blocked_client->xread_num_streams; i++)
+            {
+                if (strcmp(blocked_client->xread_streams[i], key) == 0)
+                {
+                    // Build XREAD response for this client
+                    char *response = build_xread_response_for_blocked_client(server, blocked_client, key, new_id);
+                    if (response)
+                    {
+                        send(blocked_client->fd, response, strlen(response), MSG_NOSIGNAL);
+                        
+                        // Unblock client
+                        client_unblock_stream(blocked_client);
+                        remove_client_from_list(server->blocked_clients, blocked_client);
+                        
+                        free(response);
+                        printf("Unblocked XREAD client fd=%d with new entry from stream '%s'\n",
+                               blocked_client->fd, key);
+                    }
+                    break;
+                }
+            }
+        }
+        node = next;
+    }
+}
+
 // Update command handlers to use server context
 char *handle_echo_command(redis_server_t *server, char **args, int argc, void *client)
 {
@@ -903,8 +943,8 @@ char *handle_xrange_command(redis_server_t *server, char **args, int argc, void 
 char *handle_xread_command(redis_server_t *server, char **args, int argc, void *client)
 {
     client_t *c = (client_t *)(client);
-    if(!client)
-      return NULL;
+    if (!client)
+        return NULL;
 
     if (argc < 4)
     {
@@ -912,16 +952,21 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
     }
 
     int timeout = -1;
-    for(int i = 0; i < argc; i++)
+    bool is_blocking = false;
+    
+    // Parse BLOCK parameter
+    for (int i = 0; i < argc; i++)
     {
-        if(strcasecmp(args[i], "block") == 0)
+        if (strcasecmp(args[i], "block") == 0 && i + 1 < argc)
         {
-          timeout = extract_timeout(args[i + 1]);  
-          if(timeout < 0)
-            return "-ERR invalid block command arguments";  
-          c->stream_block = true;
+            timeout = extract_timeout(args[i + 1]);
+            if (timeout < 0)
+                return strdup("-ERR invalid block command arguments\r\n");
+            is_blocking = true;
+            break;
         }
     }
+
     // Find STREAMS keyword
     int streams_pos = -1;
     for (int i = 1; i < argc; i++)
@@ -967,13 +1012,6 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         all_counts[i] = 0;
 
         redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, stream_keys[i]);
-        if(c->stream_block)
-        {
-            c->blocked_key = stream_keys[i];
-            client_block(c, stream_keys[i], timeout);
-            add_client_to_list(server->blocked_clients, c);
-            break;
-        }
         if (!obj || obj->type != REDIS_STREAM)
         {
             continue;
@@ -995,6 +1033,35 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         }
     }
 
+    // If blocking and no data, block the client
+    if (is_blocking && streams_with_data == 0)
+    {
+        // Store XREAD command info in client for later processing
+        c->xread_streams = malloc(num_streams * sizeof(char*));
+        c->xread_start_ids = malloc(num_streams * sizeof(char*));
+        c->xread_num_streams = num_streams;
+        
+        for (int i = 0; i < num_streams; i++)
+        {
+            c->xread_streams[i] = strdup(stream_keys[i]);
+            c->xread_start_ids[i] = strdup(start_ids[i]);
+        }
+        
+        client_block(c, stream_keys[0], timeout);  // Use first stream as blocked key
+        c->stream_block = true;
+        add_client_to_list(server->blocked_clients, c);
+        
+        // Cleanup
+        for (int i = 0; i < num_streams; i++)
+        {
+            free(all_results[i]);
+        }
+        free(all_results);
+        free(all_counts);
+        
+        return NULL; // No response - client is blocked
+    }
+
     if (streams_with_data == 0)
     {
         // Cleanup and return empty
@@ -1007,7 +1074,7 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         return strdup("*0\r\n");
     }
 
-    // Build RESP response manually
+    // Build RESP response manually (same as before)
     size_t response_size = 4096;
     char *response = malloc(response_size);
     int pos = 0;
@@ -1016,34 +1083,22 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
 
     for (int i = 0; i < num_streams; i++)
     {
-        if (all_counts[i] == 0)
-            continue;
+        if (all_counts[i] == 0) continue;
 
         // Stream entry: [stream_name, [entries]]
         pos += sprintf(response + pos, "*2\r\n");
-
-        // Add stream name
         pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(stream_keys[i]), stream_keys[i]);
-
-        // Add entries array
         pos += sprintf(response + pos, "*%d\r\n", all_counts[i]);
 
         for (int j = 0; j < all_counts[i]; j++)
         {
             stream_entry_t *entry = (stream_entry_t *)all_results[i][j];
-
-            // Each entry is [ID, [field1, value1, field2, value2, ...]]
             pos += sprintf(response + pos, "*2\r\n");
-
-            // Add ID
             pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(entry->id), entry->id);
-
-            // Add fields array
             pos += sprintf(response + pos, "*%zu\r\n", entry->field_count * 2);
 
             for (size_t k = 0; k < entry->field_count; k++)
             {
-                // Field name
                 pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
                                strlen(entry->fields[k].name), entry->fields[k].name);
                 pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
@@ -1058,6 +1113,7 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         }
     }
 
+    // Cleanup
     for (int i = 0; i < num_streams; i++)
     {
         free(all_results[i]);
@@ -1065,5 +1121,63 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
     free(all_results);
     free(all_counts);
 
+    return response;
+}
+
+static char *build_xread_response_for_blocked_client(redis_server_t *server, client_t *client, const char *stream_key, const char *new_id)
+{
+    if (!server || !client || !stream_key || !new_id) {
+        return NULL;
+    }
+    
+    // Get the stream
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, stream_key);
+    if (!obj || obj->type != REDIS_STREAM) {
+        return NULL;
+    }
+    
+    redis_stream_t *stream = (redis_stream_t *)obj->ptr;
+    
+    // Get the specific entry that was just added
+    stream_entry_t *entry = (stream_entry_t *)radix_search(stream->entries_tree, (char *)new_id, strlen(new_id));
+    if (!entry) {
+        return NULL;
+    }
+    
+    // Build RESP response: [[stream_name, [[entry_id, [field1, value1, ...]]]]]
+    size_t response_size = 1024;
+    char *response = malloc(response_size);
+    int pos = 0;
+    
+    // Outer array with 1 stream
+    pos += sprintf(response + pos, "*1\r\n");
+    
+    // Stream entry: [stream_name, [entries]]
+    pos += sprintf(response + pos, "*2\r\n");
+    
+    // Add stream name
+    pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(stream_key), stream_key);
+    
+    // Add entries array (1 entry)
+    pos += sprintf(response + pos, "*1\r\n");
+    
+    // The entry: [ID, [field1, value1, field2, value2, ...]]
+    pos += sprintf(response + pos, "*2\r\n");
+    
+    // Add ID
+    pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(entry->id), entry->id);
+    
+    // Add fields array
+    pos += sprintf(response + pos, "*%zu\r\n", entry->field_count * 2);
+    
+    for (size_t i = 0; i < entry->field_count; i++) {
+        // Field name
+        pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
+                      strlen(entry->fields[i].name), entry->fields[i].name);
+        // Field value
+        pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
+                      strlen(entry->fields[i].value), entry->fields[i].value);
+    }
+    
     return response;
 }

@@ -63,10 +63,36 @@ void client_unblock(client_t *client) {
     
     client->is_blocked = 0;
     client->block_timeout = 0;
-    client->stream_block = 0;
+    
     if (client->blocked_key) {
         free(client->blocked_key);
         client->blocked_key = NULL;
     }
 }
 
+void client_unblock_stream(client_t *client)
+{
+    if (!client) return;
+    
+    // Clean up XREAD-specific data
+    if (client->xread_streams) {
+        for (int i = 0; i < client->xread_num_streams; i++) {
+            free(client->xread_streams[i]);
+        }
+        free(client->xread_streams);
+        client->xread_streams = NULL;
+    }
+    
+    if (client->xread_start_ids) {
+        for (int i = 0; i < client->xread_num_streams; i++) {
+            free(client->xread_start_ids[i]);
+        }
+        free(client->xread_start_ids);
+        client->xread_start_ids = NULL;
+    }
+    
+    client->xread_num_streams = 0;
+    client->stream_block = 0;
+    
+    client_unblock(client);
+}

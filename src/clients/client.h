@@ -12,12 +12,16 @@ typedef struct client {
     time_t block_timeout;
     char *blocked_key;
     bool stream_block;
+    char **xread_streams;      
+    char **xread_start_ids;   
+    int xread_num_streams; 
 }client_t;
 
 client_t *create_client(int fd);
 void add_client_to_list(redis_list_t *list, client_t *client);
 void remove_client_from_list(redis_list_t *list, client_t *client);
 void client_block(client_t *client, const char *key, int timeout);
+void client_unblock_stream(client_t *client);
 void client_unblock(client_t *client);
 void free_client(client_t *client);
 
