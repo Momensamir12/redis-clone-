@@ -63,6 +63,8 @@ void init_command_table(void)
     }
 }
 
+static int extract_timeout(char *timeout);
+
 // Parse all arguments into an array
 static char **parse_command_args(resp_buffer_t *resp_buffer, int *argc)
 {
@@ -171,7 +173,7 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
 }
 
 // Command handlers
-static void check_blocked_clients_for_key(redis_server_t *server, const char *key)
+static void check_blocked_clients_for_key(redis_server_t *server, const char *key, const char *notify)
 {
     if (!server || !server->blocked_clients || !key)
         return;
@@ -215,6 +217,11 @@ static void check_blocked_clients_for_key(redis_server_t *server, const char *ke
                                blocked_client->fd, key);
                     }
                 }
+                return true;
+            }
+            if(obj && obj->type == REDIS_STREAM)
+            {
+                send(blocked_client->fd, notify, strlen(notify), MSG_NOSIGNAL);
             }
         }
         node = next;
@@ -335,11 +342,9 @@ char *handle_rpush_command(redis_server_t *server, char **args, int argc, void *
         list_rpush(list, strdup(args[i]));
     }
 
-    // Get the length BEFORE checking blocked clients
     size_t list_len = list_length(list);
 
-    // Now check blocked clients (they might consume the values)
-    check_blocked_clients_for_key(server, key);
+    check_blocked_clients_for_key(server, key, NULL);
 
     char response[32];
     sprintf(response, ":%zu\r\n", list_len);
@@ -375,7 +380,7 @@ char *handle_lpush_command(redis_server_t *server, char **args, int argc, void *
     size_t list_len = list_length(list);
 
     // Check if any clients are blocked on this key
-    check_blocked_clients_for_key(server, key);
+    check_blocked_clients_for_key(server, key, NULL);
 
     // Return the original length
     char response[32];
@@ -397,26 +402,7 @@ char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *
 
     // Parse timeout as float
     double timeout_float = atof(args[argc - 1]);
-    int timeout;
-
-    // Handle fractional seconds
-    if (timeout_float == 0.0)
-    {
-        timeout = 0; // Wait forever
-    }
-    else if (timeout_float > 0.0 && timeout_float < 1.0)
-    {
-        timeout = 1; // Minimum 1 second for fractional values
-    }
-    else
-    {
-        timeout = (int)timeout_float; // Truncate to seconds
-        // Add 1 if there's a fractional part
-        if (timeout_float > timeout)
-        {
-            timeout++;
-        }
-    }
+    int timeout = extract_timeout(args[argc - 1]);
 
     // Check if client is already blocked
     if (c->is_blocked)
@@ -693,7 +679,7 @@ char *handle_type_command(redis_server_t *server, char **args, int argc, void *c
 
 char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    (void)client;
+    client_t *c = (client_t *)(client);
 
     // XADD key ID field value [field value ...]
     if (argc < 5 || (argc - 3) % 2 != 0)
@@ -795,11 +781,44 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
 
     // Return the generated ID
     char *response = encode_bulk_string(generated_id);
+
+    /*check if any clients are blocked on this stream , if so send the new entry*/
+    char * args[] = {"xrange", key, generated_id, "999999999999999-999999999999999"};
+    char * b_response = handle_xrange_command(server, &args, 4, c);
+    check_blocked_clients_for_key(server, key, b_response);
+    free(args);
+    free(b_response);
+        
+
     free(generated_id);
 
     return response;
 }
+static int extract_timeout(char *timeout_st)
+{
+    double timeout_float = atof(timeout_st);
+    int timeout;
 
+    // Handle fractional seconds
+    if (timeout_float == 0.0)
+    {
+        timeout = 0; // Wait forever
+    }
+    else if (timeout_float > 0.0 && timeout_float < 1.0)
+    {
+        timeout = 1; // Minimum 1 second for fractional values
+    }
+    else
+    {
+        timeout = (int)timeout_float; // Truncate to seconds
+        // Add 1 if there's a fractional part
+        if (timeout_float > timeout)
+        {
+            timeout++;
+        }
+    }
+    return timeout;
+}
 char *handle_xrange_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)client;
@@ -884,13 +903,26 @@ char *handle_xrange_command(redis_server_t *server, char **args, int argc, void 
 
 char *handle_xread_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    (void)client;
+    client_t *c = (client_t *)(client);
+    if(!client)
+      return NULL;
 
     if (argc < 4)
     {
         return strdup("-ERR wrong number of arguments for 'xread' command\r\n");
     }
 
+    int timeout = -1;
+    for(int i = 0; i < argc; i++)
+    {
+        if(strcasecmp(args[i], "block") == 0)
+        {
+          timeout = extract_timeout(args[i + 1]);  
+          if(timeout < 0)
+            return "-ERR invalid block command arguments";  
+          c->stream_block = true;
+        }
+    }
     // Find STREAMS keyword
     int streams_pos = -1;
     for (int i = 1; i < argc; i++)
@@ -936,6 +968,12 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         all_counts[i] = 0;
 
         redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, stream_keys[i]);
+        if(c->stream_block)
+        {
+            c->blocked_key = stream_keys[i];
+            client_block(c, stream_keys[i], timeout);
+            break;
+        }
         if (!obj || obj->type != REDIS_STREAM)
         {
             continue;

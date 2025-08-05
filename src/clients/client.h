@@ -11,6 +11,7 @@ typedef struct client {
     int is_blocked;
     time_t block_timeout;
     char *blocked_key;
+    bool stream_block;
 }client_t;
 
 client_t *create_client(int fd);

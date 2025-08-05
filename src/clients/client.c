@@ -63,7 +63,7 @@ void client_unblock(client_t *client) {
     
     client->is_blocked = 0;
     client->block_timeout = 0;
-    
+    client->stream_block = 0;
     if (client->blocked_key) {
         free(client->blocked_key);
         client->blocked_key = NULL;
