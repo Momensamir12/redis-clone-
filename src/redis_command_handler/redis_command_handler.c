@@ -64,6 +64,8 @@ void init_command_table(void)
 }
 
 static int extract_timeout(char *timeout);
+static char *build_xread_response_for_blocked_client(redis_server_t *server, client_t *client, const char *stream_key, const char *new_id);
+
 
 // Parse all arguments into an array
 static char **parse_command_args(resp_buffer_t *resp_buffer, int *argc)
@@ -637,7 +639,6 @@ char *handle_lrange_command(redis_server_t *server, char **args, int argc, void 
     return response;
 }
 
-// In redis_command_handler.c - Update check_blocked_clients_timeout
 void check_blocked_clients_timeout(redis_server_t *server)
 {
     if (!server || !server->blocked_clients)
@@ -645,8 +646,6 @@ void check_blocked_clients_timeout(redis_server_t *server)
 
     time_t now = time(NULL);
     list_node_t *node = server->blocked_clients->head;
-
-    printf("Checking %zu blocked clients for timeout\n", list_length(server->blocked_clients));
 
     while (node)
     {
@@ -662,23 +661,26 @@ void check_blocked_clients_timeout(redis_server_t *server)
             const char *nil_response = "*-1\r\n";
             send(client->fd, nil_response, strlen(nil_response), MSG_NOSIGNAL);
 
-            // Unblock client
-            client_unblock(client);
+            // Unblock client (handles both list and stream blocking)
+            if (client->stream_block) {
+                client_unblock_stream(client);
+            } else {
+                client_unblock(client);
+            }
             remove_client_from_list(server->blocked_clients, client);
         }
-        else if (client->blocked_key)
+        else if (client->blocked_key && !client->stream_block)
         {
+            // Handle list blocking (existing logic)
             redis_object_t *obj = hash_table_get(server->db->dict, client->blocked_key);
             if (obj && obj->type == REDIS_LIST)
             {
                 redis_list_t *list = (redis_list_t *)obj->ptr;
                 if (list_length(list) > 0)
                 {
-                    // Pop value
                     char *value = (char *)list_lpop(list);
                     if (value)
                     {
-                        // Send response
                         char response[1024];
                         snprintf(response, sizeof(response),
                                  "*2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
@@ -686,7 +688,6 @@ void check_blocked_clients_timeout(redis_server_t *server)
                                  strlen(value), value);
                         send(client->fd, response, strlen(response), MSG_NOSIGNAL);
 
-                        // Unblock client
                         client_unblock(client);
                         remove_client_from_list(server->blocked_clients, client);
 
