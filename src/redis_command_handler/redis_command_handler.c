@@ -865,7 +865,6 @@ static int extract_timeout(char *timeout_st)
     else
     {
         timeout_seconds = (int)timeout_sec_float; // Truncate to seconds
-        // Add 1 if there's a fractional part
         if (timeout_sec_float > timeout_seconds)
         {
             timeout_seconds++;
