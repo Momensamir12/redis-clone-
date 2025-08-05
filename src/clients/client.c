@@ -40,7 +40,7 @@ void free_client(client_t *client) {
     free(client);
 }
 
-void client_block(client_t *client, const char *key, time_t timeout_timestamp)
+void client_block(client_t *client, const char *key, int timeout_timestamp)
 {
     if (!client) return;
     
