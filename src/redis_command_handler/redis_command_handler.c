@@ -646,32 +646,37 @@ void check_blocked_clients_timeout(redis_server_t *server)
 
     time_t now = time(NULL);
     list_node_t *node = server->blocked_clients->head;
+     printf("Checking timeouts: current time=%ld\n", now);
 
     while (node)
     {
         list_node_t *next = node->next;
         client_t *client = (client_t *)node->data;
-
+        
         // Only check timeout if block_timeout > 0 (0 means wait forever)
         if (client->block_timeout > 0 && client->block_timeout <= now)
         {
             printf("Client fd=%d timed out\n", client->fd);
-
-            // Send nil response for timeout
-            const char *nil_response = "*-1\r\n";
-            send(client->fd, nil_response, strlen(nil_response), MSG_NOSIGNAL);
-
-            // Unblock client (handles both list and stream blocking)
+            printf("Client fd=%d: timeout=%ld, remaining=%ld seconds\n", 
+               client->fd, client->block_timeout, client->block_timeout - now);
+            // Send nil response for timeout based on blocking type
             if (client->stream_block) {
+                // For XREAD timeout, send null array
+                const char *nil_response = "*-1\r\n";
+                send(client->fd, nil_response, strlen(nil_response), MSG_NOSIGNAL);
                 client_unblock_stream(client);
             } else {
+                // For BLPOP timeout, send null array  
+                const char *nil_response = "*-1\r\n";
+                send(client->fd, nil_response, strlen(nil_response), MSG_NOSIGNAL);
                 client_unblock(client);
             }
+            
             remove_client_from_list(server->blocked_clients, client);
         }
         else if (client->blocked_key && !client->stream_block)
         {
-            // Handle list blocking (existing logic)
+            // Handle list blocking (existing logic for BLPOP)
             redis_object_t *obj = hash_table_get(server->db->dict, client->blocked_key);
             if (obj && obj->type == REDIS_LIST)
             {
