@@ -1298,7 +1298,7 @@ char *handle_incr_command(redis_server_t *server, char **args, int argc, void *c
         // Key doesn't exist - create as number starting at 1
         obj = redis_object_create_number("1");
         hash_table_set(server->db->dict, strdup(key), obj);
-        return encode_number(1);
+        return encode_number("1");
     }
     
     if (obj->type != REDIS_NUMBER) {
@@ -1316,5 +1316,5 @@ char *handle_incr_command(redis_server_t *server, char **args, int argc, void *c
     free(obj->ptr);  // Free old string
     obj->ptr = strdup(new_value);  // Store new string
     
-    return encode_number(num);
+    return encode_number(strdup(new_value));
 }
