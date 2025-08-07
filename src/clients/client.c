@@ -110,25 +110,21 @@ void client_unblock_stream(client_t *client)
 
  void cleanup_transaction(client_t *c)
 {
-    if (!c || !c->transaction_commands)
+    if (!c)
         return;
     
-    // Free all queued commands
-    list_node_t *node = c->transaction_commands->head;
-    while (node) {
-        transaction_command_t *tx_cmd = (transaction_command_t *)node->data;
-        
-        free(tx_cmd->buffer);
-        for (int i = 0; i < tx_cmd->argc; i++) {
-            free(tx_cmd->args[i]);
+    if (c->transaction_commands) {
+        // Much simpler - just free the command strings
+        list_node_t *node = c->transaction_commands->head;
+        while (node) {
+            char *command_buffer = (char *)node->data;
+            free(command_buffer);  // Just free the string
+            node = node->next;
         }
-        free(tx_cmd->args);
-        free(tx_cmd);
         
-        node = node->next;
+        list_destroy(c->transaction_commands);
+        c->transaction_commands = NULL;
     }
     
-    list_destroy(c->transaction_commands);
-    c->transaction_commands = NULL;
     c->is_queued = 0;
 }

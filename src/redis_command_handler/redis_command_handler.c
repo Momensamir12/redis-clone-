@@ -1353,25 +1353,15 @@ char *handle_multi_command(redis_server_t *server, char **args, int argc, void *
 static void add_command_to_transaction(redis_server_t *server, char *buffer, char **args, int argc, void *client)
 {
     (void)server;
+    (void)args;  // Don't need parsed args
+    (void)argc;  // Don't need arg count
     
     client_t *c = (client_t *)client;
     if (!c || !c->transaction_commands)
         return;
     
-    // Create transaction command
-    transaction_command_t *tx_cmd = malloc(sizeof(transaction_command_t));
-    if (!tx_cmd)
-        return;
-    
-    tx_cmd->buffer = strdup(buffer);
-    tx_cmd->argc = argc;
-    tx_cmd->args = malloc(argc * sizeof(char *));
-    
-    for (int i = 0; i < argc; i++) {
-        tx_cmd->args[i] = strdup(args[i]);
-    }
-    
-    list_rpush(c->transaction_commands, tx_cmd);
+    // Just store the raw command buffer - much simpler!
+    list_rpush(c->transaction_commands, strdup(buffer));
 }
 
 char *handle_exec_command(redis_server_t *server, char **args, int argc, void *client)
@@ -1380,53 +1370,49 @@ char *handle_exec_command(redis_server_t *server, char **args, int argc, void *c
     (void)argc;
     
     client_t *c = (client_t *)client;
-    if (!c || !c->transaction_commands)
-        return strdup("-ERR EXEC without MULTI\r\n");
-        
-    if (!c->is_queued)
-    {
+    if (!c || !c->is_queued || !c->transaction_commands) {
         return strdup("-ERR EXEC without MULTI\r\n");
     }
     
-    // Get number of queued commands
     size_t command_count = list_length(c->transaction_commands);
     
     if (command_count == 0) {
-        // Empty transaction
-        c->is_queued = 0;
-        list_destroy(c->transaction_commands);
-        c->transaction_commands = NULL;
+        cleanup_transaction(c);
         return strdup("*0\r\n");
     }
     
-    // Execute all commands and collect responses
     char **responses = calloc(command_count, sizeof(char *));
     if (!responses) {
+        cleanup_transaction(c);
         return strdup("-ERR out of memory\r\n");
     }
     
-    size_t total_response_size = 64; // Start with base size for array header
+    // Temporarily disable transaction mode
+    c->is_queued = 0;
     
-    // Execute each command
+    // Execute each stored command buffer
     list_node_t *node = c->transaction_commands->head;
     for (size_t i = 0; i < command_count && node; i++) {
-        transaction_command_t *tx_cmd = (transaction_command_t *)node->data;
+        char *command_buffer = (char *)node->data;
         
-        // Execute the command
-        responses[i] = handle_command(server, tx_cmd->buffer, client);
+        // Let handle_command do all the parsing and execution
+        responses[i] = handle_command(server, command_buffer, client);
+        
         if (!responses[i]) {
-            responses[i] = strdup("+OK\r\n"); // Default response
+            responses[i] = strdup("+OK\r\n");
         }
         
-        total_response_size += strlen(responses[i]);
         node = node->next;
     }
     
     // Build RESP array response
-    char *final_response = malloc(total_response_size);
-    int pos = 0;
+    size_t total_size = 64;
+    for (size_t i = 0; i < command_count; i++) {
+        total_size += strlen(responses[i]);
+    }
     
-    pos += sprintf(final_response + pos, "*%zu\r\n", command_count);
+    char *final_response = malloc(total_size);
+    int pos = sprintf(final_response, "*%zu\r\n", command_count);
     
     for (size_t i = 0; i < command_count; i++) {
         strcpy(final_response + pos, responses[i]);
@@ -1435,8 +1421,6 @@ char *handle_exec_command(redis_server_t *server, char **args, int argc, void *c
     }
     
     free(responses);
-    
-    // Clean up transaction
     cleanup_transaction(c);
     
     return final_response;
