@@ -33,7 +33,7 @@ void remove_client_from_list(redis_list_t *list, client_t *client);
 void client_block(client_t *client, const char *key, int timeout);
 void client_unblock_stream(client_t *client);
 void client_unblock(client_t *client);
-static void cleanup_transaction(client_t *c);
+void cleanup_transaction(client_t *c);
 void free_client(client_t *client);
 
 #endif

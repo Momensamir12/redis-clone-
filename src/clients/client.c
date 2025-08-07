@@ -108,7 +108,7 @@ void client_unblock_stream(client_t *client)
     client_unblock(client);
 }
 
-static void cleanup_transaction(client_t *c)
+ void cleanup_transaction(client_t *c)
 {
     if (!c || !c->transaction_commands)
         return;
