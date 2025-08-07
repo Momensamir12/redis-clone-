@@ -24,7 +24,7 @@ typedef struct client {
 typedef struct transaction_command {
     char *buffer;       // Original command buffer
     char **args;        // Parsed arguments  
-    int argc;           // Argument count
+    int argc;          
 } transaction_command_t;
 
 client_t *create_client(int fd);
