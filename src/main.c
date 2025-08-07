@@ -16,14 +16,6 @@
 
 static redis_server_t *g_server = NULL;
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-#define BUFFER_SIZE 1024
-#define REDIS_DEFAULT_PORT 6379
-
-static redis_server_t *g_server = NULL;
 
 void print_usage(const char *program_name) {
     fprintf(stderr, "Usage: %s [--port PORT]\n", program_name);
