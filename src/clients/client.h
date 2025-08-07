@@ -17,7 +17,15 @@ typedef struct client {
     char **xread_streams;      
     char **xread_start_ids;   
     int xread_num_streams; 
+    int is_queued; /* is the client queueing commands using multi*/
+    redis_list_t *transaction_commands;
 }client_t;
+
+typedef struct transaction_command {
+    char *buffer;       // Original command buffer
+    char **args;        // Parsed arguments  
+    int argc;           // Argument count
+} transaction_command_t;
 
 client_t *create_client(int fd);
 void add_client_to_list(redis_list_t *list, client_t *client);
@@ -25,6 +33,7 @@ void remove_client_from_list(redis_list_t *list, client_t *client);
 void client_block(client_t *client, const char *key, int timeout);
 void client_unblock_stream(client_t *client);
 void client_unblock(client_t *client);
+static void cleanup_transaction(client_t *c);
 void free_client(client_t *client);
 
 #endif

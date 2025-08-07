@@ -37,6 +37,8 @@ void free_client(client_t *client) {
     if (client->blocked_key) {
         free(client->blocked_key);
     }
+    if(client->transaction_commands)
+      cleanup_transaction(client);
     free(client);
 }
 
@@ -104,4 +106,29 @@ void client_unblock_stream(client_t *client)
     client->stream_block = 0;
     
     client_unblock(client);
+}
+
+static void cleanup_transaction(client_t *c)
+{
+    if (!c || !c->transaction_commands)
+        return;
+    
+    // Free all queued commands
+    list_node_t *node = c->transaction_commands->head;
+    while (node) {
+        transaction_command_t *tx_cmd = (transaction_command_t *)node->data;
+        
+        free(tx_cmd->buffer);
+        for (int i = 0; i < tx_cmd->argc; i++) {
+            free(tx_cmd->args[i]);
+        }
+        free(tx_cmd->args);
+        free(tx_cmd);
+        
+        node = node->next;
+    }
+    
+    list_destroy(c->transaction_commands);
+    c->transaction_commands = NULL;
+    c->is_queued = 0;
 }

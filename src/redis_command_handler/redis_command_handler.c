@@ -39,6 +39,9 @@ static redis_command_t commands[] = {
     {"xrange", handle_xrange_command, 4, 6},
     {"xread", handle_xread_command, 4, -1},
     {"incr", handle_incr_command,2 , -1},
+    {"multi", handle_multi_command, 1, 1},
+    {"exec", handle_exec_command, 1, 1},
+    {"discard", handle_discard_command, 1, 1},
     {NULL, NULL, 0, 0} // Sentinel
 };
 
@@ -67,6 +70,7 @@ void init_command_table(void)
 
 static int extract_timeout(char *timeout);
 static char *build_xread_response_for_blocked_client(redis_server_t *server, client_t *client, const char *stream_key, const char *new_id);
+static void add_command_to_transaction(redis_server_t *server, char *buffer, char **args, int argc, void *client);
 
 // Parse all arguments into an array
 static char **parse_command_args(resp_buffer_t *resp_buffer, int *argc)
@@ -115,12 +119,13 @@ static void free_command_args(char **args, int argc)
     free(args);
 }
 
-// Main command handler
 char *handle_command(redis_server_t *server, char *buffer, void *client)
 {
     if (!server || !buffer)
         return NULL;
 
+    client_t *c = (client_t *)client;
+    
     resp_buffer_t *resp_buffer = calloc(1, sizeof(resp_buffer_t));
     if (!resp_buffer)
         return NULL;
@@ -137,14 +142,26 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         return strdup("-ERR protocol error\r\n");
     }
 
-    // Convert command to lowercase for lookup
     char *cmd_lower = strdup(args[0]);
     for (char *p = cmd_lower; *p; p++)
     {
         *p = tolower(*p);
     }
 
-    // Look up command
+    if (c && c->is_queued && 
+        strcmp(cmd_lower, "exec") != 0 && 
+        strcmp(cmd_lower, "discard") != 0 &&
+        strcmp(cmd_lower, "multi") != 0)
+    {
+        // Queue the command instead of executing
+        add_command_to_transaction(server, buffer, args, argc, client);
+        free(cmd_lower);
+        free_command_args(args, argc);
+        free(resp_buffer);
+        return strdup("+QUEUED\r\n");
+    }
+
+    // Look up and execute command normally...
     redis_command_t *cmd = (redis_command_t *)hash_table_get(command_table, cmd_lower);
     free(cmd_lower);
 
@@ -167,7 +184,7 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         return strdup(response);
     }
 
-    // Call handler with server context
+    // Call handler
     char *response = cmd->handler(server, args, argc, client);
 
     free_command_args(args, argc);
@@ -1317,4 +1334,126 @@ char *handle_incr_command(redis_server_t *server, char **args, int argc, void *c
     obj->ptr = strdup(new_value);  // Store new string
     
     return encode_number(strdup(new_value));
+}
+
+char *handle_multi_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    client_t *c = (client_t *) client;
+    if(!c)
+      return NULL;
+
+    c->transaction_commands = list_create();
+    if(!c->transaction_commands)
+      return NULL;
+    c->is_queued = 1;
+    
+    return encode_simple_string("OK");
+}
+
+static void add_command_to_transaction(redis_server_t *server, char *buffer, char **args, int argc, void *client)
+{
+    (void)server;
+    
+    client_t *c = (client_t *)client;
+    if (!c || !c->transaction_commands)
+        return;
+    
+    // Create transaction command
+    transaction_command_t *tx_cmd = malloc(sizeof(transaction_command_t));
+    if (!tx_cmd)
+        return;
+    
+    tx_cmd->buffer = strdup(buffer);
+    tx_cmd->argc = argc;
+    tx_cmd->args = malloc(argc * sizeof(char *));
+    
+    for (int i = 0; i < argc; i++) {
+        tx_cmd->args[i] = strdup(args[i]);
+    }
+    
+    list_rpush(c->transaction_commands, tx_cmd);
+}
+
+char *handle_exec_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)args;
+    (void)argc;
+    
+    client_t *c = (client_t *)client;
+    if (!c || !c->transaction_commands)
+        return strdup("-ERR EXEC without MULTI\r\n");
+        
+    if (!c->is_queued)
+    {
+        return strdup("-ERR EXEC without MULTI\r\n");
+    }
+    
+    // Get number of queued commands
+    size_t command_count = list_length(c->transaction_commands);
+    
+    if (command_count == 0) {
+        // Empty transaction
+        c->is_queued = 0;
+        list_destroy(c->transaction_commands);
+        c->transaction_commands = NULL;
+        return strdup("*0\r\n");
+    }
+    
+    // Execute all commands and collect responses
+    char **responses = calloc(command_count, sizeof(char *));
+    if (!responses) {
+        return strdup("-ERR out of memory\r\n");
+    }
+    
+    size_t total_response_size = 64; // Start with base size for array header
+    
+    // Execute each command
+    list_node_t *node = c->transaction_commands->head;
+    for (size_t i = 0; i < command_count && node; i++) {
+        transaction_command_t *tx_cmd = (transaction_command_t *)node->data;
+        
+        // Execute the command
+        responses[i] = handle_command(server, tx_cmd->buffer, client);
+        if (!responses[i]) {
+            responses[i] = strdup("+OK\r\n"); // Default response
+        }
+        
+        total_response_size += strlen(responses[i]);
+        node = node->next;
+    }
+    
+    // Build RESP array response
+    char *final_response = malloc(total_response_size);
+    int pos = 0;
+    
+    pos += sprintf(final_response + pos, "*%zu\r\n", command_count);
+    
+    for (size_t i = 0; i < command_count; i++) {
+        strcpy(final_response + pos, responses[i]);
+        pos += strlen(responses[i]);
+        free(responses[i]);
+    }
+    
+    free(responses);
+    
+    // Clean up transaction
+    cleanup_transaction(c);
+    
+    return final_response;
+}
+
+char *handle_discard_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)server;
+    (void)args;
+    (void)argc;
+    
+    client_t *c = (client_t *)client;
+    if (!c || !c->is_queued)
+    {
+        return strdup("-ERR DISCARD without MULTI\r\n");
+    }
+    
+    cleanup_transaction(c);
+    return strdup("+OK\r\n");
 }
