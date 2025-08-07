@@ -33,6 +33,7 @@ void redis_object_destroy(redis_object_t *obj);
 redis_object_t *redis_object_create_string(const char *value);
 redis_object_t *redis_object_create_list(void);
 redis_object_t *redis_object_create_stream(void *stream_ptr);
+redis_object_t *redis_object_create_number (const char *value);
 
 // Utility function to get type name
 const char *redis_type_to_string(redis_type_t type);

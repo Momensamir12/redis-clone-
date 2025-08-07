@@ -99,6 +99,9 @@ char* encode_bulk_string(const char *str) {
 }
 
 char* encode_simple_string(const char *str) {
+
+    if(!str)
+      return NULL;
     int len = strlen(str);
 
     // Allocate memory for '+' + str + "\r\n" + '\0'
@@ -165,5 +168,16 @@ char *encode_resp_array(char **args, int argc) {
     }
     
     *pos = '\0';  // Null terminate
+    return result;
+}
+
+char *encode_number(const char *str)
+{
+    if(!str)
+      return NULL;
+    int len = strlen(str);
+    char *result = malloc(len + 4);
+    sprintf(result, ":%s\r\n", str);
+
     return result;
 }

@@ -14,6 +14,7 @@
 #include <math.h>
 #include "../streams/redis_stream.h"
 #include "../lib/radix_tree.h"
+#include "../lib/utils.h"
 
 #define NULL_RESP_VALUE "$-1\r\n"
 
@@ -37,6 +38,7 @@ static redis_command_t commands[] = {
     {"xadd", handle_xadd_command, 4, -1},
     {"xrange", handle_xrange_command, 4, 6},
     {"xread", handle_xread_command, 4, -1},
+    {"incr", handle_incr_command,2 , -1},
     {NULL, NULL, 0, 0} // Sentinel
 };
 
@@ -45,7 +47,7 @@ void init_command_table(void)
     if (command_table != NULL)
         return; // Already initialized
 
-    command_table = hash_table_create(32); // Small table, we don't have many commands
+    command_table = hash_table_create(32); 
 
     for (int i = 0; commands[i].name != NULL; i++)
     {
@@ -65,7 +67,6 @@ void init_command_table(void)
 
 static int extract_timeout(char *timeout);
 static char *build_xread_response_for_blocked_client(redis_server_t *server, client_t *client, const char *stream_key, const char *new_id);
-
 
 // Parse all arguments into an array
 static char **parse_command_args(resp_buffer_t *resp_buffer, int *argc)
@@ -177,22 +178,22 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
 static long long extract_blpop_timeout_ms(char *timeout_str)
 {
     double timeout_seconds = atof(timeout_str);
-    
+
     printf("extract_blpop_timeout_ms: input='%s', parsed=%f seconds\n", timeout_str, timeout_seconds);
-    
+
     if (timeout_seconds == 0.0)
     {
         return 0; // Wait forever
     }
-    
+
     // Convert seconds to milliseconds
     long long timeout_ms = (long long)(timeout_seconds * 1000.0);
-    
+
     printf("extract_blpop_timeout_ms: %f seconds -> %lld ms\n", timeout_seconds, timeout_ms);
     return timeout_ms;
 }
 
-// For XREAD - timeout is already in milliseconds  
+// For XREAD - timeout is already in milliseconds
 static long long extract_xread_timeout_ms(char *timeout_str)
 {
     long long timeout_ms = atoll(timeout_str);
@@ -245,7 +246,7 @@ static void check_blocked_clients_for_key(redis_server_t *server, const char *ke
                     }
                 }
             }
-            if(obj && obj->type == REDIS_STREAM)
+            if (obj && obj->type == REDIS_STREAM)
             {
                 send(blocked_client->fd, notify, strlen(notify), MSG_NOSIGNAL);
             }
@@ -259,7 +260,7 @@ static void check_blocked_clients_for_stream(redis_server_t *server, const char 
     if (!server || !server->blocked_clients || !key || !new_id)
         return;
 
-    printf("check_blocked_clients_for_stream: key='%s', new_id='%s', blocked_clients=%zu\n", 
+    printf("check_blocked_clients_for_stream: key='%s', new_id='%s', blocked_clients=%zu\n",
            key, new_id, list_length(server->blocked_clients));
 
     list_node_t *node = server->blocked_clients->head;
@@ -268,8 +269,8 @@ static void check_blocked_clients_for_stream(redis_server_t *server, const char 
         list_node_t *next = node->next;
         client_t *blocked_client = (client_t *)node->data;
 
-        printf("Checking client fd=%d: stream_block=%d, has_xread_streams=%d\n", 
-               blocked_client->fd, blocked_client->stream_block, 
+        printf("Checking client fd=%d: stream_block=%d, has_xread_streams=%d\n",
+               blocked_client->fd, blocked_client->stream_block,
                blocked_client->xread_streams != NULL);
 
         if (blocked_client->stream_block && blocked_client->xread_streams)
@@ -277,26 +278,26 @@ static void check_blocked_clients_for_stream(redis_server_t *server, const char 
             // Check if this stream is in the client's XREAD list
             for (int i = 0; i < blocked_client->xread_num_streams; i++)
             {
-                printf("Comparing stream '%s' with client's stream[%d] '%s'\n", 
+                printf("Comparing stream '%s' with client's stream[%d] '%s'\n",
                        key, i, blocked_client->xread_streams[i]);
-                       
+
                 if (strcmp(blocked_client->xread_streams[i], key) == 0)
                 {
                     printf("Found matching stream! Building response...\n");
-                    
+
                     // Build XREAD response for this client
                     char *response = build_xread_response_for_blocked_client(server, blocked_client, key, new_id);
                     if (response)
                     {
-                        printf("Sending response to client fd=%d: %.100s...\n", 
+                        printf("Sending response to client fd=%d: %.100s...\n",
                                blocked_client->fd, response);
-                               
+
                         send(blocked_client->fd, response, strlen(response), MSG_NOSIGNAL);
-                        
+
                         // Unblock client
                         client_unblock_stream(blocked_client);
                         remove_client_from_list(server->blocked_clients, blocked_client);
-                        
+
                         free(response);
                         printf("Unblocked XREAD client fd=%d with new entry from stream '%s'\n",
                                blocked_client->fd, key);
@@ -362,8 +363,12 @@ char *handle_set_command(redis_server_t *server, char **args, int argc, void *cl
             return strdup("-ERR syntax error\r\n");
         }
     }
+    redis_object_t *obj;
+    if(isInteger(value))
+      obj = redis_object_create_number(value);
 
-    redis_object_t *obj = redis_object_create_string(value);
+    else  
+      obj = redis_object_create_string(value);
 
     if (expiry_ms)
     {
@@ -523,13 +528,14 @@ char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *
     // No keys have values - block the client with millisecond precision
     long long current_time_ms = get_current_time_ms();
     long long timeout_timestamp_ms = 0;
-    
-    if (timeout_ms > 0) {
+
+    if (timeout_ms > 0)
+    {
         timeout_timestamp_ms = current_time_ms + timeout_ms;
-        printf("Setting BLPOP timeout for client fd=%d: current=%lld + %lld = %lld ms\n", 
+        printf("Setting BLPOP timeout for client fd=%d: current=%lld + %lld = %lld ms\n",
                c->fd, current_time_ms, timeout_ms, timeout_timestamp_ms);
     }
-    
+
     // Use millisecond timeout for BLPOP
     c->block_timeout_ms = timeout_timestamp_ms;
     c->is_blocked = true;
@@ -701,8 +707,8 @@ void check_blocked_clients_timeout(redis_server_t *server)
 
     long long now_ms = get_current_time_ms();
     list_node_t *node = server->blocked_clients->head;
-    
-    printf("Checking timeouts: current time=%lld ms, blocked clients=%zu\n", 
+
+    printf("Checking timeouts: current time=%lld ms, blocked clients=%zu\n",
            now_ms, list_length(server->blocked_clients));
 
     while (node)
@@ -711,25 +717,28 @@ void check_blocked_clients_timeout(redis_server_t *server)
         client_t *client = (client_t *)node->data;
 
         // Both XREAD and BLPOP now use millisecond precision
-        printf("Client fd=%d: stream_block=%d, block_timeout_ms=%lld, current=%lld\n", 
+        printf("Client fd=%d: stream_block=%d, block_timeout_ms=%lld, current=%lld\n",
                client->fd, client->stream_block, client->block_timeout_ms, now_ms);
 
         if (client->block_timeout_ms > 0 && client->block_timeout_ms <= now_ms)
         {
-            printf("Client fd=%d timed out! timeout=%lld, now=%lld\n", 
+            printf("Client fd=%d timed out! timeout=%lld, now=%lld\n",
                    client->fd, client->block_timeout_ms, now_ms);
 
             const char *nil_response = "*-1\r\n";
             send(client->fd, nil_response, strlen(nil_response), MSG_NOSIGNAL);
-            
-            if (client->stream_block) {
+
+            if (client->stream_block)
+            {
                 client_unblock_stream(client);
                 printf("Sent timeout response to XREAD client fd=%d\n", client->fd);
-            } else {
+            }
+            else
+            {
                 client_unblock(client);
                 printf("Sent timeout response to BLPOP client fd=%d\n", client->fd);
             }
-            
+
             remove_client_from_list(server->blocked_clients, client);
         }
         else if (client->blocked_key && !client->stream_block)
@@ -886,8 +895,6 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
     /*check if any clients are blocked on this stream , if so send the new entry*/
     check_blocked_clients_for_stream(server, key, generated_id);
 
-
-
     free(generated_id);
 
     return response;
@@ -901,7 +908,7 @@ static int extract_timeout(char *timeout_st)
 
     // Convert milliseconds to seconds
     double timeout_sec_float = timeout_float / 1000.0;
-    
+
     // Handle fractional seconds
     if (timeout_sec_float == 0.0)
     {
@@ -909,7 +916,7 @@ static int extract_timeout(char *timeout_st)
     }
     else if (timeout_sec_float > 0.0 && timeout_sec_float < 1.0)
     {
-        timeout_seconds = 1; // Minimum 1 second for fractional values  
+        timeout_seconds = 1; // Minimum 1 second for fractional values
     }
     else
     {
@@ -920,7 +927,7 @@ static int extract_timeout(char *timeout_st)
             timeout_seconds++;
         }
     }
-    
+
     printf("extract_timeout: %f ms -> %d seconds\n", timeout_float, timeout_seconds);
     return timeout_seconds;
 }
@@ -1019,29 +1026,30 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
     }
 
     // Check if client is already blocked
-    if (c->is_blocked && (c->stream_block || c->blocked_key)) {
+    if (c->is_blocked && (c->stream_block || c->blocked_key))
+    {
         printf("Client fd=%d is already blocked\n", c->fd);
         return strdup("-ERR client already blocked\r\n");
     }
 
- // In handle_xread_command, replace the timeout parsing:
-long long timeout_ms = -1;
-bool is_blocking = false;
+    // In handle_xread_command, replace the timeout parsing:
+    long long timeout_ms = -1;
+    bool is_blocking = false;
 
-// Parse BLOCK parameter
-for (int i = 0; i < argc; i++)
-{
-    if (strcasecmp(args[i], "block") == 0 && i + 1 < argc)
+    // Parse BLOCK parameter
+    for (int i = 0; i < argc; i++)
     {
-        timeout_ms = extract_xread_timeout_ms(args[i + 1]);
-        if (timeout_ms < 0)
-            return strdup("-ERR invalid block command arguments\r\n");
-        is_blocking = true;
-        break;
+        if (strcasecmp(args[i], "block") == 0 && i + 1 < argc)
+        {
+            timeout_ms = extract_xread_timeout_ms(args[i + 1]);
+            if (timeout_ms < 0)
+                return strdup("-ERR invalid block command arguments\r\n");
+            is_blocking = true;
+            break;
+        }
     }
-}
     // ... existing code for finding STREAMS and parsing arguments ...
-    
+
     // Find STREAMS keyword
     int streams_pos = -1;
     for (int i = 1; i < argc; i++)
@@ -1115,33 +1123,34 @@ for (int i = 0; i < argc; i++)
     {
         long long current_time_ms = get_current_time_ms();
         long long timeout_timestamp_ms = 0;
-        
-        if (timeout_ms > 0) {
+
+        if (timeout_ms > 0)
+        {
             timeout_timestamp_ms = current_time_ms + timeout_ms;
-            printf("Setting timeout for client fd=%d: current=%lld + %lld = %lld ms\n", 
+            printf("Setting timeout for client fd=%d: current=%lld + %lld = %lld ms\n",
                    c->fd, current_time_ms, timeout_ms, timeout_timestamp_ms);
         }
-        
-        printf("Blocking client fd=%d on XREAD for %lld ms (until %lld)\n", 
+
+        printf("Blocking client fd=%d on XREAD for %lld ms (until %lld)\n",
                c->fd, timeout_ms, timeout_timestamp_ms);
-        
+
         // Store XREAD command info in client for later processing
-        c->xread_streams = malloc(num_streams * sizeof(char*));
-        c->xread_start_ids = malloc(num_streams * sizeof(char*));
+        c->xread_streams = malloc(num_streams * sizeof(char *));
+        c->xread_start_ids = malloc(num_streams * sizeof(char *));
         c->xread_num_streams = num_streams;
-        
+
         for (int i = 0; i < num_streams; i++)
         {
             c->xread_streams[i] = strdup(stream_keys[i]);
             c->xread_start_ids[i] = strdup(start_ids[i]);
         }
-        
+
         // Use millisecond timeout for XREAD
         c->block_timeout_ms = timeout_timestamp_ms;
         c->stream_block = true;
         c->is_blocked = true;
         add_client_to_list(server->blocked_clients, c);
-        
+
         // Cleanup
         for (int i = 0; i < num_streams; i++)
         {
@@ -1149,7 +1158,7 @@ for (int i = 0; i < argc; i++)
         }
         free(all_results);
         free(all_counts);
-        
+
         return NULL; // No response - client is blocked
     }
 
@@ -1174,7 +1183,8 @@ for (int i = 0; i < argc; i++)
 
     for (int i = 0; i < num_streams; i++)
     {
-        if (all_counts[i] == 0) continue;
+        if (all_counts[i] == 0)
+            continue;
 
         // Stream entry: [stream_name, [entries]]
         pos += sprintf(response + pos, "*2\r\n");
@@ -1217,58 +1227,94 @@ for (int i = 0; i < argc; i++)
 
 static char *build_xread_response_for_blocked_client(redis_server_t *server, client_t *client, const char *stream_key, const char *new_id)
 {
-    if (!server || !client || !stream_key || !new_id) {
+    if (!server || !client || !stream_key || !new_id)
+    {
         return NULL;
     }
-    
+
     // Get the stream
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, stream_key);
-    if (!obj || obj->type != REDIS_STREAM) {
+    if (!obj || obj->type != REDIS_STREAM)
+    {
         return NULL;
     }
-    
+
     redis_stream_t *stream = (redis_stream_t *)obj->ptr;
-    
+
     // Get the specific entry that was just added
     stream_entry_t *entry = (stream_entry_t *)radix_search(stream->entries_tree, (char *)new_id, strlen(new_id));
-    if (!entry) {
+    if (!entry)
+    {
         return NULL;
     }
-    
+
     // Build RESP response: [[stream_name, [[entry_id, [field1, value1, ...]]]]]
     size_t response_size = 1024;
     char *response = malloc(response_size);
     int pos = 0;
-    
+
     // Outer array with 1 stream
     pos += sprintf(response + pos, "*1\r\n");
-    
+
     // Stream entry: [stream_name, [entries]]
     pos += sprintf(response + pos, "*2\r\n");
-    
+
     // Add stream name
     pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(stream_key), stream_key);
-    
+
     // Add entries array (1 entry)
     pos += sprintf(response + pos, "*1\r\n");
-    
+
     // The entry: [ID, [field1, value1, field2, value2, ...]]
     pos += sprintf(response + pos, "*2\r\n");
-    
+
     // Add ID
     pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(entry->id), entry->id);
-    
+
     // Add fields array
     pos += sprintf(response + pos, "*%zu\r\n", entry->field_count * 2);
-    
-    for (size_t i = 0; i < entry->field_count; i++) {
+
+    for (size_t i = 0; i < entry->field_count; i++)
+    {
         // Field name
         pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
-                      strlen(entry->fields[i].name), entry->fields[i].name);
+                       strlen(entry->fields[i].name), entry->fields[i].name);
         // Field value
         pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
-                      strlen(entry->fields[i].value), entry->fields[i].value);
+                       strlen(entry->fields[i].value), entry->fields[i].value);
+    }
+
+    return response;
+}
+char *handle_incr_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)argc;
+    (void)client;
+    
+    char *key = args[1];
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    
+    if (!obj) {
+        // Key doesn't exist - create as number starting at 1
+        obj = redis_object_create_number("1");
+        hash_table_set(server->db->dict, strdup(key), obj);
+        return encode_number(1);
     }
     
-    return response;
+    if (obj->type != REDIS_NUMBER) {
+        return strdup("-ERR value is not an integer or out of range\r\n");
+    }
+    
+    char *value = (char *)obj->ptr;
+    long long num = atoll(value);
+    
+    num++;
+    
+    char new_value[32];
+    snprintf(new_value, sizeof(new_value), "%lld", num);
+    
+    free(obj->ptr);  // Free old string
+    obj->ptr = strdup(new_value);  // Store new string
+    
+    return encode_number(num);
 }

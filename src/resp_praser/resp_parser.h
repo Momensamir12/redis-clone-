@@ -35,4 +35,5 @@ char *parse_resp_bulk_string(resp_buffer_t *buffer);
 char *encode_bulk_string(const char *str);
 char *encode_simple_string(const char *str);
 char *encode_resp_array(char **args, int argc);
+char *encode_number(const char *str);
 #endif

@@ -98,6 +98,14 @@ redis_object_t *redis_object_create_stream(void *stream_ptr) {
     return obj;
 }
 
+redis_object_t *redis_object_create_number (const char *value)
+{
+    char *str = strdup(value);
+    if(!str) return NULL;
+
+    return redis_object_create(REDIS_NUMBER, str);
+}
+
 // Destroy a Redis object
 void redis_object_destroy(redis_object_t *obj) {
     if (!obj) return;
