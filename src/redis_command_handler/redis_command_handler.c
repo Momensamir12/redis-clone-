@@ -398,6 +398,11 @@ char *handle_get_command(redis_server_t *server, char **args, int argc, void *cl
         return strdup(NULL_RESP_VALUE);
     }
 
+    if(obj->type == REDIS_NUMBER)
+    {
+        return encode_number((char *)obj->ptr);
+    }
+
     if (obj->type != REDIS_STRING)
     {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
