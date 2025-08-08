@@ -34,18 +34,6 @@ redis_server_t* redis_server_create(int port);
 void redis_server_destroy(redis_server_t *redis);
 void redis_server_run(redis_server_t *redis);
 
-int redis_server_configure_master(redis_server_t *server)
-{
-  replication_info_t *info = malloc(sizeof(replication_info_t *));
-  if(!info)
-    return -1;
-    
-  info->role = MASTER;
-  info->connected_slaves = 0;
-
-  return 0;
-}
-
 int redis_server_configure_master(redis_server_t *server);
 int redis_server_configure_replica(redis_server_t *server, char* master_host, int master_port);
 
