@@ -72,7 +72,7 @@ redis_server_t* redis_server_create(int port)
        free(redis);
        return NULL;
     }
-    event_loop->user_data = redis;
+    event_loop->server_data = redis;
 
     printf("Redis server listening on port %d\n", port);
     return redis;
@@ -112,7 +112,12 @@ void redis_server_destroy(redis_server_t *redis) {
     if(redis->db) {
         redis_db_destroy(redis->db);
     }
-    
+    if(redis->replication_info)
+    {
+      free(redis->replication_info->master_host);
+      free(redis->replication_info);
+    }  
+
     free(redis);
 }
 
@@ -175,8 +180,8 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
     client_t *client = (client_t *)data;
     
     // Need to get redis_server - you could store it in event_loop or pass differently
-    // For now, let's assume you store it in the event_loop structure
-    redis_server_t *redis = (redis_server_t *)loop->user_data;  
+    // For now, let's store it in the event_loop structure
+    redis_server_t *redis = (redis_server_t *)loop->server_data;  
     
     if (events & EPOLLIN) {
         // Skip if client is blocked
@@ -256,4 +261,56 @@ static void handle_timer_interrupt(event_loop_t *loop, int fd, uint32_t events, 
     
     // Check blocked clients for timeout
     check_blocked_clients_timeout(redis);
+}
+
+int redis_server_configure_master(redis_server_t *server)
+{
+    if (!server) {
+        return -1;
+    }
+    
+    // Allocate memory for the struct itself, not a pointer to it
+    replication_info_t *info = malloc(sizeof(replication_info_t));
+    if (!info) {
+        return -1;
+    }
+    
+    info->role = MASTER;
+    info->connected_slaves = 0;
+    info->master_host = NULL;  // Masters don't have a master
+    info->master_port = 0;
+    
+    // Store the replication info in the server structure
+    server->replication_info = info;
+    
+    return 0;
+}
+
+int redis_server_configure_replica(redis_server_t *server, char* master_host, int master_port)
+{
+    if (!server || !master_host) {
+        return -1;
+    }
+    
+    // Allocate memory for the struct itself, not a pointer to it
+    replication_info_t *info = malloc(sizeof(replication_info_t));
+    if (!info) {
+        return -1;
+    }
+    
+    info->role = SLAVE;
+    info->connected_slaves = 0;  // Slaves don't have slaves, so 0 not -1
+    
+    // Store master connection information
+    info->master_host = strdup(master_host);  // Make a copy of the host string
+    if (!info->master_host) {
+        free(info);
+        return -1;
+    }
+    info->master_port = master_port;
+    
+    // Store the replication info in the server structure
+    server->replication_info = info;
+    
+    return 0;
 }

@@ -19,7 +19,7 @@ typedef struct event_loop {
         event_handler_t handler;
         void *data;
     } handlers [MAX_EVENTS];
-    void *user_data;
+    void *server_data;
 } event_loop_t;
 
 event_loop_t* event_loop_create(void);

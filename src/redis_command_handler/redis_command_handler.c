@@ -42,6 +42,7 @@ static redis_command_t commands[] = {
     {"multi", handle_multi_command, 1, 1},
     {"exec", handle_exec_command, 1, 1},
     {"discard", handle_discard_command, 1, 1},
+    {"info", handle_info_command, 2, -1},
     {NULL, NULL, 0, 0} // Sentinel
 };
 
@@ -1440,4 +1441,80 @@ char *handle_discard_command(redis_server_t *server, char **args, int argc, void
     
     cleanup_transaction(c);
     return strdup("+OK\r\n");
+}
+
+char *handle_info_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)client;
+    (void)args;  // INFO command doesn't use args typically
+    (void)argc;  // INFO command doesn't use argc typically
+    
+    if (!server->replication_info) {
+        return strdup("-ERR server not configured\r\n");
+    }
+    
+    char **response;
+    int response_count;
+    
+    if (server->replication_info->role == MASTER) {
+        response_count = 2;
+        response = malloc(response_count * sizeof(char*));
+        if (!response) {
+            return strdup("-ERR out of memory\r\n");
+        }
+        
+        response[0] = strdup("role:master");
+        
+        // Format connected slaves count
+        char slaves_buffer[64];
+        snprintf(slaves_buffer, sizeof(slaves_buffer), "connected_slaves:%d", 
+                 server->replication_info->connected_slaves);
+        response[1] = strdup(slaves_buffer);
+        
+    } else if (server->replication_info->role == SLAVE) {
+        response_count = 3;
+        response = malloc(response_count * sizeof(char*));
+        if (!response) {
+            return strdup("-ERR out of memory\r\n");
+        }
+        
+        response[0] = strdup("role:slave");
+        
+        // Format master host
+        char master_buffer[256];
+        snprintf(master_buffer, sizeof(master_buffer), "master_host:%s", 
+                 server->replication_info->master_host ? server->replication_info->master_host : "unknown");
+        response[1] = strdup(master_buffer);
+        
+        // Format master port
+        char port_buffer[64];
+        snprintf(port_buffer, sizeof(port_buffer), "master_port:%d", 
+                 server->replication_info->master_port);
+        response[2] = strdup(port_buffer);
+        
+    } else {
+        return strdup("-ERR unknown role\r\n");
+    }
+    
+    // Check if any strdup failed
+    for (int i = 0; i < response_count; i++) {
+        if (!response[i]) {
+            // Cleanup already allocated strings
+            for (int j = 0; j < i; j++) {
+                free(response[j]);
+            }
+            free(response);
+            return strdup("-ERR out of memory\r\n");
+        }
+    }
+    
+    char *result = encode_resp_array(response, response_count);
+    
+    // Cleanup the response array and strings
+    for (int i = 0; i < response_count; i++) {
+        free(response[i]);
+    }
+    free(response);
+    
+    return result;
 }
