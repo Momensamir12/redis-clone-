@@ -1468,6 +1468,5 @@ char *handle_info_command(redis_server_t *server, char **args, int argc, void *c
         return strdup("-ERR unknown role\r\n");
     }
     
-    // Use your existing function!
     return encode_bulk_string(info_buffer);
 }
