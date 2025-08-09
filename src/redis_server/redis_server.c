@@ -15,7 +15,10 @@
 static void handle_server_accept(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_timer_interrupt(event_loop_t *loop, int fd, uint32_t events, void *data);
+static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void *data);
+
 static void generate_replication_id(char *repl_id);
+static void connect_to_master(redis_server_t *server);
 
 redis_server_t* redis_server_create(int port)
 {
@@ -311,9 +314,10 @@ int redis_server_configure_replica(redis_server_t *server, char* master_host, in
     }
     info->master_port = master_port;
     generate_replication_id(info->replication_id);
-
+    
     // Store the replication info in the server structure
     server->replication_info = info;
+    connect_to_master(server);
 
     
     return 0;
@@ -328,4 +332,23 @@ static void generate_replication_id(char *repl_id) {
         repl_id[i] = hex_chars[rand() % 16];
     }
     repl_id[40] = '\0';
+}
+
+static void connect_to_master(redis_server_t *server)
+{
+int master_fd = socket(AF_INET, SOCK_STREAM, 0);
+
+struct sockaddr_in addr;
+addr.sin_family = AF_INET;
+addr.sin_port = htons(server->replication_info->master_port);  // master port
+addr.sin_addr.s_addr = inet_addr("127.0.0.1");  // localhost
+connect(master_fd, (struct sockaddr*)&addr, sizeof(addr));
+event_loop_add_fd(server->event_loop, master_fd, EPOLLIN | EPOLLET, handle_master_data, NULL);
+char *cmd = "*1\r\n$4\r\nPING\r\n";
+send(master_fd, cmd, strlen(cmd),MSG_NOSIGNAL);
+}
+
+static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void *data)
+{
+
 }
