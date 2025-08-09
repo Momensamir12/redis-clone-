@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>  
 #include <ctype.h>
 #include "../redis_command_handler/redis_command_handler.h"
 #include "../lib/list.h"
@@ -341,7 +342,7 @@ int master_fd = socket(AF_INET, SOCK_STREAM, 0);
 struct sockaddr_in addr;
 addr.sin_family = AF_INET;
 addr.sin_port = htons(server->replication_info->master_port);  // master port
-addr.sin_addr.s_addr = inet_addr("127.0.0.1");  // localhost
+inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 connect(master_fd, (struct sockaddr*)&addr, sizeof(addr));
 event_loop_add_fd(server->event_loop, master_fd, EPOLLIN | EPOLLET, handle_master_data, NULL);
 char *cmd = "*1\r\n$4\r\nPING\r\n";
