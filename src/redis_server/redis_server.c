@@ -378,7 +378,7 @@ static void send_next_handshake_command(redis_server_t *server)
             {
                 // Simple approach - build the command step by step
                 char port_str[16];
-                snprintf(port_str, sizeof(port_str), "%d", server->port);
+                snprintf(port_str, sizeof(port_str), "%d", server->server->port);
                 
                 char port_cmd[200];
                 snprintf(port_cmd, sizeof(port_cmd), 
