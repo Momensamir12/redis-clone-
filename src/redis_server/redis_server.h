@@ -19,7 +19,8 @@ typedef struct replication_info{
   char *master_host;
   char replication_id[41];
   uint64_t master_repl_offset;
-  u_int16_t master_fd; 
+  u_int16_t master_fd;
+  uint16_t handshake_step; 
 
 } replication_info_t;
 typedef struct redis_server {

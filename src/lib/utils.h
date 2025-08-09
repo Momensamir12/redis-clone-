@@ -29,4 +29,19 @@ static inline bool isInteger(const char *str) {
     return true; 
 }
 
+
+static inline get_digit_count(int num) {
+    if (num == 0) return 1;
+    int count = 0;
+    if (num < 0) {
+        count = 1; // for negative sign
+        num = -num;
+    }
+    while (num > 0) {
+        count++;
+        num /= 10;
+    }
+    return count;
+}
+
 #endif
