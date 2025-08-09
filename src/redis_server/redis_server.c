@@ -376,9 +376,16 @@ static void send_next_handshake_command(redis_server_t *server)
             
 case 1: // Send REPLCONF listening-port
     {
-        char *cmd = "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n$4\r\n6380\r\n";
-        send(fd, cmd, strlen(cmd), MSG_NOSIGNAL);
-        printf("Sent hardcoded REPLCONF\n");
+        char port_str[16];
+        snprintf(port_str, sizeof(port_str), "%d", server->server->port);
+        
+        char port_cmd[200];
+        snprintf(port_cmd, sizeof(port_cmd), 
+                "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$%zu\r\n%s\r\n", 
+                strlen(port_str), port_str);
+                
+        send(fd, port_cmd, strlen(port_cmd), MSG_NOSIGNAL);
+        printf("Sent REPLCONF listening-port %s\n", port_str);
     }
     break;
             
