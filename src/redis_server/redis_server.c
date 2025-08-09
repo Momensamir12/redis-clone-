@@ -374,21 +374,28 @@ static void send_next_handshake_command(redis_server_t *server)
             }
             break;
             
-        case 1: // Send REPLCONF listening-port
-            {
-                // Simple approach - build the command step by step
-                char port_str[16];
-                snprintf(port_str, sizeof(port_str), "%d", server->server->port);
-                
-                char port_cmd[200];
-                snprintf(port_cmd, sizeof(port_cmd), 
-                        "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n$%zu\r\n%s\r\n", 
-                        strlen(port_str), port_str);
-                
-                send(fd, port_cmd, strlen(port_cmd), MSG_NOSIGNAL);
-                printf("Sent REPLCONF listening-port: %s", port_cmd);
-            }
-            break;
+case 1: // Send REPLCONF listening-port
+    {
+        // Make buffer larger and be more explicit
+        char port_cmd[512];  // Increase buffer size
+        
+        // Build the command very explicitly
+        int written = snprintf(port_cmd, sizeof(port_cmd),
+                              "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n$4\r\n%d\r\n", 
+                              server->server->port);
+        
+        printf("Command length: %d, Command: ", written);
+        for (int i = 0; i < written; i++) {
+            if (port_cmd[i] == '\r') printf("\\r");
+            else if (port_cmd[i] == '\n') printf("\\n");
+            else printf("%c", port_cmd[i]);
+        }
+        printf("\n");
+        
+        ssize_t sent = send(fd, port_cmd, written, MSG_NOSIGNAL);
+        printf("Sent %zd bytes\n", sent);
+    }
+    break;
             
         case 2: // Send REPLCONF capa psync2
             {
