@@ -43,6 +43,7 @@ static redis_command_t commands[] = {
     {"exec", handle_exec_command, 1, 1},
     {"discard", handle_discard_command, 1, 1},
     {"info", handle_info_command, 2, -1},
+    {"replconf", handle_repliconf_command, 3, -1},
     {NULL, NULL, 0, 0} // Sentinel
 };
 
@@ -1474,4 +1475,9 @@ char *handle_info_command(redis_server_t *server, char **args, int argc, void *c
     }
    
     return encode_bulk_string(info_buffer);
+}
+
+char *handle_repliconf_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    return encode_simple_string(strdup("OK"));
 }

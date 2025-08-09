@@ -12,7 +12,7 @@
 #include "../redis_command_handler/redis_command_handler.h"
 #include "../lib/list.h"
 #include "../clients/client.h"
-
+#include "../resp_praser/resp_parser.h"
 static void handle_server_accept(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_timer_interrupt(event_loop_t *loop, int fd, uint32_t events, void *data);
@@ -337,19 +337,54 @@ static void generate_replication_id(char *repl_id) {
 
 static void connect_to_master(redis_server_t *server)
 {
-int master_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int master_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (master_fd < 0) {
+        printf("Failed to create socket for master connection\n");
+        return;
+    }
 
-struct sockaddr_in addr;
-addr.sin_family = AF_INET;
-addr.sin_port = htons(server->replication_info->master_port);  // master port
-inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-connect(master_fd, (struct sockaddr*)&addr, sizeof(addr));
-event_loop_add_fd(server->event_loop, master_fd, EPOLLIN | EPOLLET, handle_master_data, NULL);
-char *cmd = "*1\r\n$4\r\nPING\r\n";
-send(master_fd, cmd, strlen(cmd),MSG_NOSIGNAL);
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(server->replication_info->master_port);
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+    
+    if (connect(master_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        printf("Failed to connect to master\n");
+        close(master_fd);
+        return;
+    }
+    
+    // Store master fd
+    server->replication_info->master_fd = master_fd;
+    
+    event_loop_add_fd(server->event_loop, master_fd, EPOLLIN | EPOLLET, handle_master_data, NULL);
+    
+    // Step 1: Send PING
+    char *ping_cmd = "*1\r\n$4\r\nPING\r\n";
+    send(master_fd, ping_cmd, strlen(ping_cmd), MSG_NOSIGNAL);
+    printf("Sent PING to master\n");
+    
+    // Step 2: Send REPLCONF listening-port
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", server->server->port);
+    
+    char port_cmd[200];
+    snprintf(port_cmd, sizeof(port_cmd), 
+             "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n$%zu\r\n%s\r\n", 
+             strlen(port_str), port_str);
+    send(master_fd, port_cmd, strlen(port_cmd), MSG_NOSIGNAL);
+    
+    // Step 3: Send REPLCONF capa psync2
+    char *capa_cmd = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+    send(master_fd, capa_cmd, strlen(capa_cmd), MSG_NOSIGNAL);
+    printf("Sent REPLCONF capa psync2\n");
+    
+    // Step 4: Send PSYNC ? -1
+    char *psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+    send(master_fd, psync_cmd, strlen(psync_cmd), MSG_NOSIGNAL);
 }
 
 static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void *data)
 {
-
+  
 }

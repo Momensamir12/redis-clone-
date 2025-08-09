@@ -39,8 +39,7 @@ char *handle_multi_command(redis_server_t *server, char **args, int argc, void *
 char *handle_exec_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_discard_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_info_command(redis_server_t *server, char **args, int argc, void *client);
-char *send_ping_command(redis_server_t *server, char **args, int argc, void *client);
-
+char *handle_repliconf_command(redis_server_t *server, char **args, int argc, void *client);
 
 
 
