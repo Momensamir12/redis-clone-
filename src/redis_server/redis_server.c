@@ -376,26 +376,9 @@ static void send_next_handshake_command(redis_server_t *server)
             
 case 1: // Send REPLCONF listening-port
     {
-        char port_cmd[512];
-        int pos = 0;
-        
-        // Build piece by piece
-        memcpy(port_cmd + pos, "*3\r\n", 4); pos += 4;
-        memcpy(port_cmd + pos, "$8\r\n", 4); pos += 4;  
-        memcpy(port_cmd + pos, "REPLCONF\r\n", 10); pos += 10;
-        memcpy(port_cmd + pos, "$13\r\n", 5); pos += 5;
-        memcpy(port_cmd + pos, "listening-port\r\n", 16); pos += 16;
-        
-        // Port part
-        char port_str[16];
-        int port_len = snprintf(port_str, sizeof(port_str), "%d", server->server->port);
-        
-        pos += sprintf(port_cmd + pos, "$%d\r\n", port_len);
-        memcpy(port_cmd + pos, port_str, port_len); pos += port_len;
-        memcpy(port_cmd + pos, "\r\n", 2); pos += 2;
-        
-        ssize_t sent = send(fd, port_cmd, pos, MSG_NOSIGNAL);
-        printf("Built command manually, sent %zd/%d bytes\n", sent, pos);
+        char *cmd = "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n$4\r\n6380\r\n";
+        send(fd, cmd, strlen(cmd), MSG_NOSIGNAL);
+        printf("Sent hardcoded REPLCONF\n");
     }
     break;
             
