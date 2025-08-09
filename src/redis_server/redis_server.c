@@ -367,27 +367,43 @@ static void send_next_handshake_command(redis_server_t *server)
     
     switch (server->replication_info->handshake_step) {
         case 0: // Send PING
-            send(fd, "*1\r\n$4\r\nPING\r\n", 14, MSG_NOSIGNAL);
-            printf("Sent PING\n");
+            {
+                char *ping_cmd = "*1\r\n$4\r\nPING\r\n";
+                send(fd, ping_cmd, strlen(ping_cmd), MSG_NOSIGNAL);
+                printf("Sent PING\n");
+            }
             break;
             
         case 1: // Send REPLCONF listening-port
-            char port_cmd[100];
-            snprintf(port_cmd, sizeof(port_cmd), 
-                    "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n$%d\r\n%d\r\n", 
-                    get_digit_count(server->server->port), server->server->port);
-            send(fd, port_cmd, strlen(port_cmd), MSG_NOSIGNAL);
-            printf("Sent REPLCONF listening-port\n");
+            {
+                // Simple approach - build the command step by step
+                char port_str[16];
+                snprintf(port_str, sizeof(port_str), "%d", server->port);
+                
+                char port_cmd[200];
+                snprintf(port_cmd, sizeof(port_cmd), 
+                        "*3\r\n$8\r\nREPLCONF\r\n$13\r\nlistening-port\r\n$%zu\r\n%s\r\n", 
+                        strlen(port_str), port_str);
+                
+                send(fd, port_cmd, strlen(port_cmd), MSG_NOSIGNAL);
+                printf("Sent REPLCONF listening-port: %s", port_cmd);
+            }
             break;
             
         case 2: // Send REPLCONF capa psync2
-            send(fd, "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n", 35, MSG_NOSIGNAL);
-            printf("Sent REPLCONF capa psync2\n");
+            {
+                char *capa_cmd = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+                send(fd, capa_cmd, strlen(capa_cmd), MSG_NOSIGNAL);
+                printf("Sent REPLCONF capa psync2\n");
+            }
             break;
             
         case 3: // Send PSYNC
-            send(fd, "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n", 26, MSG_NOSIGNAL);
-            printf("Sent PSYNC\n");
+            {
+                char *psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+                send(fd, psync_cmd, strlen(psync_cmd), MSG_NOSIGNAL);
+                printf("Sent PSYNC\n");
+            }
             break;
     }
 }
