@@ -1460,7 +1460,7 @@ char *handle_info_command(redis_server_t *server, char **args, int argc, void *c
             "role:master\r\nconnected_slaves:%d",
             server->replication_info->connected_slaves);
     } else if (server->replication_info->role == SLAVE) {
-        offset += snprintf(info_buffer, sizeof(info_buffer) - offset,
+        offset += snprintf(info_buffer + offset, sizeof(info_buffer) - offset,
             "role:slave\r\nmaster_host:%s\r\nmaster_port:%d",
             server->replication_info->master_host ? server->replication_info->master_host : "unknown",
             server->replication_info->master_port);
@@ -1469,7 +1469,7 @@ char *handle_info_command(redis_server_t *server, char **args, int argc, void *c
     }
     if(server->replication_info->replication_id && server->replication_info->master_repl_offset >=0)
     {
-      offset += snprintf(info_buffer, sizeof(info_buffer) - offset, "\r\nmaster_replid:%s\r\nmaster_repl_offset:%d",server->replication_info->replication_id, 
+      offset += snprintf(info_buffer + offset, sizeof(info_buffer) - offset, "\r\nmaster_replid:%s\r\nmaster_repl_offset:%d",server->replication_info->replication_id, 
         server->replication_info->master_repl_offset);
     }
    
