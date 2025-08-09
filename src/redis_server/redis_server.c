@@ -310,9 +310,11 @@ int redis_server_configure_replica(redis_server_t *server, char* master_host, in
         return -1;
     }
     info->master_port = master_port;
-    
+    generate_replication_id(info->replication_id);
+
     // Store the replication info in the server structure
     server->replication_info = info;
+
     
     return 0;
 }
