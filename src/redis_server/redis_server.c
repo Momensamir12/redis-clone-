@@ -18,6 +18,7 @@ static void handle_server_accept(event_loop_t *loop, int fd, uint32_t events, vo
 static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_timer_interrupt(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void *data);
+static void send_next_handshake_command(redis_server_t *server);
 
 static void generate_replication_id(char *repl_id);
 static void connect_to_master(redis_server_t *server);
