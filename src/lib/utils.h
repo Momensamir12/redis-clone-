@@ -30,7 +30,7 @@ static inline bool isInteger(const char *str) {
 }
 
 
-static inline get_digit_count(int num) {
+static inline int get_digit_count(int num) {
     if (num == 0) return 1;
     int count = 0;
     if (num < 0) {
