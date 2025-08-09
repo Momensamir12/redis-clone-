@@ -1467,7 +1467,7 @@ char *handle_info_command(redis_server_t *server, char **args, int argc, void *c
     } else {
         return strdup("-ERR unknown role\r\n");
     }
-    if(server->replication_info->replication_id && server->replication_info->master_repl_offset)
+    if(server->replication_info->replication_id && server->replication_info->master_repl_offset >=0)
     {
       snprintf(info_buffer, sizeof(info_buffer), "\r\nmaster_replid:%s\r\nmaster_repl_offset:%d",server->replication_info->replication_id, 
         server->replication_info->master_repl_offset);
