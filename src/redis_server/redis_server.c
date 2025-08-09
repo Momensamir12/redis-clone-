@@ -15,6 +15,7 @@
 static void handle_server_accept(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_timer_interrupt(event_loop_t *loop, int fd, uint32_t events, void *data);
+static void generate_replication_id(char *repl_id);
 
 redis_server_t* redis_server_create(int port)
 {
@@ -279,7 +280,8 @@ int redis_server_configure_master(redis_server_t *server)
     info->connected_slaves = 0;
     info->master_host = NULL;  // Masters don't have a master
     info->master_port = 0;
-    
+    generate_replication_id(info->replication_id);
+    info->master_repl_offset = 0;
     // Store the replication info in the server structure
     server->replication_info = info;
     
@@ -313,4 +315,15 @@ int redis_server_configure_replica(redis_server_t *server, char* master_host, in
     server->replication_info = info;
     
     return 0;
+}
+
+static void generate_replication_id(char *repl_id) {
+    const char hex_chars[] = "0123456789abcdef";
+    
+    srand(time(NULL));
+    
+    for (int i = 0; i < 40; i++) {
+        repl_id[i] = hex_chars[rand() % 16];
+    }
+    repl_id[40] = '\0';
 }
