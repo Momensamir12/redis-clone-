@@ -340,23 +340,25 @@ static void generate_replication_id(char *repl_id) {
 static void connect_to_master(redis_server_t *server)
 {
     int master_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (master_fd < 0) return;
+    if (master_fd < 0)
+        return;
 
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_port = htons(server->replication_info->master_port);
     inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-    
-    if (connect(master_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+
+    if (connect(master_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    {
         close(master_fd);
         return;
     }
-    
+
     server->replication_info->master_fd = master_fd;
     server->replication_info->handshake_step = 0; // Track current step
-    
+
     event_loop_add_fd(server->event_loop, master_fd, EPOLLIN | EPOLLET, handle_master_data, NULL);
-    
+
     // Start with step 1: PING
     send_next_handshake_command(server);
 }
@@ -364,68 +366,74 @@ static void connect_to_master(redis_server_t *server)
 static void send_next_handshake_command(redis_server_t *server)
 {
     int fd = server->replication_info->master_fd;
-    
-    switch (server->replication_info->handshake_step) {
-        case 0: // Send PING
-            {
-                char *ping_cmd = "*1\r\n$4\r\nPING\r\n";
-                send(fd, ping_cmd, strlen(ping_cmd), MSG_NOSIGNAL);
-                printf("Sent PING\n");
-            }
-            break;
-            
-case 1: // Send REPLCONF listening-port
+
+    switch (server->replication_info->handshake_step)
+    {
+    case 0: // Send PING
+    {
+        char *ping_cmd = "*1\r\n$4\r\nPING\r\n";
+        send(fd, ping_cmd, strlen(ping_cmd), MSG_NOSIGNAL);
+        printf("Sent PING\n");
+    }
+    break;
+
+    case 1: // Send REPLCONF listening-port
     {
         char port_str[16];
         snprintf(port_str, sizeof(port_str), "%d", server->server->port);
-        
+
         char port_cmd[200];
-        snprintf(port_cmd, sizeof(port_cmd), 
-                "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$%zu\r\n%s\r\n", 
-                strlen(port_str), port_str);
-                
+        snprintf(port_cmd, sizeof(port_cmd),
+                 "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$%zu\r\n%s\r\n",
+                 strlen(port_str), port_str);
+
         send(fd, port_cmd, strlen(port_cmd), MSG_NOSIGNAL);
         printf("Sent REPLCONF listening-port %s\n", port_str);
     }
     break;
-            
-        case 2: // Send REPLCONF capa psync2
-            {
-                char *capa_cmd = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
-                send(fd, capa_cmd, strlen(capa_cmd), MSG_NOSIGNAL);
-                printf("Sent REPLCONF capa psync2\n");
-            }
-            break;
-            
-        case 3: // Send PSYNC
-            {
-                char *psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
-                send(fd, psync_cmd, strlen(psync_cmd), MSG_NOSIGNAL);
-                printf("Sent PSYNC\n");
-            }
-            break;
+
+    case 2: // Send REPLCONF capa psync2
+    {
+        char *capa_cmd = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
+        send(fd, capa_cmd, strlen(capa_cmd), MSG_NOSIGNAL);
+        printf("Sent REPLCONF capa psync2\n");
+    }
+    break;
+
+    case 3: // Send PSYNC
+    {
+        char *psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+        send(fd, psync_cmd, strlen(psync_cmd), MSG_NOSIGNAL);
+        printf("Sent PSYNC\n");
+    }
+    break;
     }
 }
 
 static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void *data)
 {
-    redis_server_t *server = (redis_server_t *)loop->server_data;  
-    
+    redis_server_t *server = (redis_server_t *)loop->server_data;
+
     char buffer[1024];
     ssize_t bytes_read = recv(fd, buffer, sizeof(buffer) - 1, 0);
-    if (bytes_read <= 0) return;
-    
+    if (bytes_read <= 0)
+        return;
+
     buffer[bytes_read] = '\0';
     printf("Received: %s", buffer);
-    
+
     // Check if response is positive, then move to next step
-    if (strstr(buffer, "+PONG") || strstr(buffer, "+OK") || strstr(buffer, "+FULLRESYNC")) {
+    if (strstr(buffer, "+PONG") || strstr(buffer, "+OK") || strstr(buffer, "+FULLRESYNC"))
+    {
         server->replication_info->handshake_step++;
-        
-        if (server->replication_info->handshake_step < 4) {
+
+        if (server->replication_info->handshake_step < 4)
+        {
             // Send next command
             send_next_handshake_command(server);
-        } else {
+        }
+        else
+        {
             printf("Handshake complete!\n");
         }
     }

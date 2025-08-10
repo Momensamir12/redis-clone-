@@ -17,7 +17,7 @@
 #include "../lib/utils.h"
 
 #define NULL_RESP_VALUE "$-1\r\n"
-
+#define PSYNC_RESPONSE_SIZE 65
 // Global command hash table
 static hash_table_t *command_table = NULL;
 
@@ -44,6 +44,7 @@ static redis_command_t commands[] = {
     {"discard", handle_discard_command, 1, 1},
     {"info", handle_info_command, 2, -1},
     {"replconf", handle_repliconf_command, 3, -1},
+    {"psync", handle_psync_command, 3, -1},
     {NULL, NULL, 0, 0} // Sentinel
 };
 
@@ -1480,4 +1481,17 @@ char *handle_info_command(redis_server_t *server, char **args, int argc, void *c
 char *handle_repliconf_command(redis_server_t *server, char **args, int argc, void *client)
 {
     return encode_simple_string(strdup("OK"));
+}
+
+char *handle_psync_command(redis_server_t *server, char **args, int argc, void *client)
+{
+  char buffer[PSYNC_RESPONSE_SIZE];
+  int offset = 0;
+  if(strcmp(args[1], "?") == 0)
+  {
+    offset += snprintf(buffer + offset, sizeof(buffer) - offset, "FULLRESYNC %s %d", server->replication_info->replication_id,
+     server->replication_info->master_repl_offset);
+    return encode_simple_string(buffer);
+  }
+  return "-ERR ";
 }

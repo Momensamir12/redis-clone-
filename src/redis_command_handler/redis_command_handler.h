@@ -40,6 +40,7 @@ char *handle_exec_command(redis_server_t *server, char **args, int argc, void *c
 char *handle_discard_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_info_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_repliconf_command(redis_server_t *server, char **args, int argc, void *client);
+char *handle_psync_command(redis_server_t *server, char **args, int argc, void *client);
 
 
 
