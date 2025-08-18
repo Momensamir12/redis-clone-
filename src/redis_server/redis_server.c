@@ -22,6 +22,8 @@ static void send_next_handshake_command(redis_server_t *server);
 
 static void generate_replication_id(char *repl_id);
 static void connect_to_master(redis_server_t *server);
+static void propagate_to_replicas(redis_server_t *server, const char *command_buffer, size_t buffer_len);
+static int is_write_command(const char *buffer);
 
 redis_server_t* redis_server_create(int port)
 {
@@ -181,13 +183,9 @@ static void handle_server_accept(event_loop_t *event_loop, int fd, uint32_t even
            client_fd, list_length(redis->clients));
 }
 
-// redis_server.c - Update handle_client_data
 static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void *data) {
     char buffer[1024];
     client_t *client = (client_t *)data;
-    
-    // Need to get redis_server - you could store it in event_loop or pass differently
-    // For now, let's store it in the event_loop structure
     redis_server_t *redis = (redis_server_t *)loop->server_data;  
     
     if (events & EPOLLIN) {
@@ -203,6 +201,9 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                 buffer[bytes_read] = '\0';
                 printf("Received from client %d: %s", fd, buffer);
                 
+                // Check if this is a write command and we're a master
+                int is_write_cmd = is_write_command(buffer);
+                
                 // Pass server and client to command handler
                 char *response = handle_command(redis, buffer, client);
                 
@@ -210,11 +211,24 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                 if (response) {
                     send(fd, response, strlen(response), MSG_NOSIGNAL);
                     free(response);
+                    
+                    // PROPAGATE TO REPLICAS IF:
+                    // 1. We're a master
+                    // 2. This was a write command
+                    // 3. Command executed successfully (got a response)
+                    if (is_write_cmd && 
+                        redis->replication_info && 
+                        redis->replication_info->role == MASTER &&
+                        redis->replication_info->connected_slaves > 0) {
+                        
+                        propagate_to_replicas(redis, buffer, bytes_read);
+                    }
                 }
             }
             else if (bytes_read == 0) {
                 // Client disconnected
                 printf("Client %d disconnected\n", fd);
+                
                 
                 // Clean up
                 if (client->is_blocked) {
@@ -230,7 +244,7 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                     break;
                 } else {
                     perror("read");
-                    // Error - disconnect
+        
                     if (client->is_blocked) {
                         remove_client_from_list(redis->blocked_clients, client);
                     }
@@ -256,6 +270,27 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
     }
 }
 
+static void propagate_to_replicas(redis_server_t *server, const char *command_buffer, size_t buffer_len) {
+    replication_info_t *repl_info = server->replication_info;
+    
+    for (int i = 0; i < repl_info->connected_slaves && i < MAX_REPLICAS; i++) {
+        int replica_fd = repl_info->replicas_fd[i];
+        
+        if (replica_fd > 0) {  
+            ssize_t bytes_sent = send(replica_fd, command_buffer, buffer_len, MSG_NOSIGNAL);
+            
+            if (bytes_sent < 0) {
+                printf("Failed to propagate to replica fd %d: %s\n", 
+                       replica_fd, strerror(errno));
+            } else {
+                printf("Propagated %zu bytes to replica fd %d\n", buffer_len, replica_fd);
+            }
+        }
+    }
+    
+    // Update replication offset
+    repl_info->master_repl_offset += buffer_len;
+}
 // Update timer interrupt handler
 static void handle_timer_interrupt(event_loop_t *loop, int fd, uint32_t events, void *data) {
     (void)loop;
@@ -290,7 +325,9 @@ int redis_server_configure_master(redis_server_t *server)
     info->master_repl_offset = 0;
     // Store the replication info in the server structure
     server->replication_info = info;
-    
+    for (int i = 0; i < MAX_REPLICAS; i++) {
+        info->replicas_fd[i] = -1;  
+    }
     return 0;
 }
 
@@ -437,4 +474,36 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
             printf("Handshake complete!\n");
         }
     }
+}
+
+static int is_write_command(const char *buffer) {
+    // Quick RESP parsing to get the first argument (command)
+    if (buffer[0] != '*') {
+        return 0;  // Not a RESP array
+    }
+    
+    // Find first command after *n\r\n$len\r\n
+    const char *cmd_start = strstr(buffer, "\r\n$");
+    if (!cmd_start) return 0;
+    
+    cmd_start = strstr(cmd_start + 3, "\r\n");
+    if (!cmd_start) return 0;
+    
+    cmd_start += 2;  // Skip \r\n
+    
+    if (strncasecmp(cmd_start, "SET", 3) == 0 ||
+        strncasecmp(cmd_start, "DEL", 3) == 0 ||
+        strncasecmp(cmd_start, "HSET", 4) == 0 ||
+        strncasecmp(cmd_start, "LPUSH", 5) == 0) {
+        return 1;
+    }
+    
+    // Skip replication commands
+    if (strncasecmp(cmd_start, "REPLCONF", 8) == 0 ||
+        strncasecmp(cmd_start, "PSYNC", 5) == 0 ||
+        strncasecmp(cmd_start, "PING", 4) == 0) {
+        return 0;
+    }
+    
+    return 0;
 }

@@ -6,6 +6,7 @@
 #include "../redis_db/redis_db.h"
 #include "../lib/list.h"
 
+#define MAX_REPLICAS 5
 
 typedef enum {
     MASTER,
@@ -20,7 +21,10 @@ typedef struct replication_info{
   char replication_id[41];
   uint64_t master_repl_offset;
   u_int16_t master_fd;
-  uint16_t handshake_step; 
+  uint16_t handshake_step;
+  size_t replicas_fd [MAX_REPLICAS];
+ 
+  
 
 } replication_info_t;
 typedef struct redis_server {
@@ -30,7 +34,6 @@ typedef struct redis_server {
     redis_list_t *clients;
     redis_list_t *blocked_clients;
     replication_info_t *replication_info;
-    
 
 } redis_server_t;
 

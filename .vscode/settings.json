@@ -7,6 +7,7 @@
         "client.h": "c",
         "event_loop.h": "c",
         "stdio.h": "c",
-        "redis_stream.h": "c"
+        "redis_stream.h": "c",
+        "redis_db.h": "c"
     }
 }

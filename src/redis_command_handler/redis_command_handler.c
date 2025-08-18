@@ -22,6 +22,10 @@
 
 #define NULL_RESP_VALUE "$-1\r\n"
 #define PSYNC_RESPONSE_SIZE 65
+#define PSYNC_RESPONSE_SIZE 1024
+#define RDB_RESPONSE_SIZE 4096
+#define TEMP_RDB_FILE "temp.rdb"
+#define MAIN_RDB_FILE "dump.rdb"
 // Global command hash table
 static hash_table_t *command_table = NULL;
 
@@ -55,16 +59,14 @@ static redis_command_t commands[] = {
 void init_command_table(void)
 {
     if (command_table != NULL)
-        return; // Already initialized
+        return; 
 
     command_table = hash_table_create(32); 
 
     for (int i = 0; commands[i].name != NULL; i++)
     {
-        // Store pointer to command struct
         hash_table_set(command_table, commands[i].name, &commands[i]);
 
-        // Also store lowercase version for case-insensitive lookup
         char *lower = strdup(commands[i].name);
         for (char *p = lower; *p; p++)
         {
@@ -78,9 +80,12 @@ void init_command_table(void)
 static int extract_timeout(char *timeout);
 static char *build_xread_response_for_blocked_client(redis_server_t *server, client_t *client, const char *stream_key, const char *new_id);
 static void add_command_to_transaction(redis_server_t *server, char *buffer, char **args, int argc, void *client);
+
+
 static int create_rdb_snapshot(redis_db_t *db);
 static int send_rdb_file_to_client(int client_fd, const char *rdb_path);
 static long get_file_size_stat(const char *filepath);
+static int rename_rdb_file(const char *temp_path, const char *main_path);
 
 // Parse all arguments into an array
 static char **parse_command_args(resp_buffer_t *resp_buffer, int *argc)
@@ -1487,6 +1492,11 @@ char *handle_info_command(redis_server_t *server, char **args, int argc, void *c
 
 char *handle_repliconf_command(redis_server_t *server, char **args, int argc, void *client)
 {
+    if(server->replication_info->role != MASTER)
+      return NULL;
+    client_t *c = (client_t *)client;
+    server->replication_info->replicas_fd[server->replication_info->connected_slaves++] = c->fd;
+    
     return encode_simple_string(strdup("OK"));
 }
 
@@ -1505,7 +1515,6 @@ char *handle_psync_command(redis_server_t *server, char **args, int argc, void *
         client_t *client_conn = (client_t *)client;
         int client_fd = client_conn->fd; 
         
-        // Create RDB snapshot
         int rdb_fd = create_rdb_snapshot(server->db); 
         if (rdb_fd == -1) {
             return encode_simple_string("ERR Failed to create RDB snapshot");
@@ -1517,13 +1526,19 @@ char *handle_psync_command(redis_server_t *server, char **args, int argc, void *
         write(client_fd, response, strlen(response));
         free(response);
         
-        if (send_rdb_file_to_client(client_fd, "temp.rdb") == -1) {
+        if (send_rdb_file_to_client(client_fd, TEMP_RDB_FILE) == -1) {
+            unlink(TEMP_RDB_FILE);
             return NULL; 
         }
         
-        unlink("temp.rdb");
+        if (rename_rdb_file(TEMP_RDB_FILE, MAIN_RDB_FILE) == 0) {
+            printf("RDB snapshot successfully saved as %s\n", MAIN_RDB_FILE);
+        } else {
+            fprintf(stderr, "Warning: Failed to rename RDB file to main file, cleaning up temp file\n");
+            unlink(TEMP_RDB_FILE);
+        }
         
-        return NULL; // We've already sent everything to the client
+        return NULL; 
     }
     
     return encode_simple_string("ERR Invalid PSYNC arguments");
@@ -1531,7 +1546,7 @@ char *handle_psync_command(redis_server_t *server, char **args, int argc, void *
 
 static int create_rdb_snapshot(redis_db_t *db)
 {
-    int fd = open("temp.rdb", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fd = open(TEMP_RDB_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1) {
         perror("Failed to create RDB file");
         return -1;
@@ -1544,7 +1559,7 @@ static int create_rdb_snapshot(redis_db_t *db)
     if (bytes_written == -1) {
         perror("Failed to save RDB database");
         close(fd);
-        unlink("temp.rdb");
+        unlink(TEMP_RDB_FILE);
         return -1;
     }
     
@@ -1552,18 +1567,18 @@ static int create_rdb_snapshot(redis_db_t *db)
     if (!buffer_flush(&buffer)) {
         perror("Failed to flush RDB buffer");
         close(fd);
-        unlink("temp.rdb");
+        unlink(TEMP_RDB_FILE);
         return -1;
     }
     
-    printf("RDB snapshot created successfully: %zd bytes written\n", bytes_written);
+    printf("RDB snapshot created successfully: %zd bytes written to %s\n", bytes_written, TEMP_RDB_FILE);
     return fd;
 }
 
 static int send_rdb_file_to_client(int client_fd, const char *rdb_path)
 {
     // Get file size
-    long file_size = get_file_size_stat(rdb_path);
+    long file_size = get_file_size(rdb_path);
     if (file_size == -1) {
         fprintf(stderr, "Failed to get RDB file size\n");
         return -1;
@@ -1588,7 +1603,6 @@ static int send_rdb_file_to_client(int client_fd, const char *rdb_path)
     // Send file contents in chunks
     char file_buffer[8192];
     size_t bytes_read;
-    size_t total_sent = 0;
     
     while ((bytes_read = fread(file_buffer, 1, sizeof(file_buffer), rdb_file)) > 0) {
         ssize_t bytes_written = write(client_fd, file_buffer, bytes_read);
@@ -1597,18 +1611,62 @@ static int send_rdb_file_to_client(int client_fd, const char *rdb_path)
             fclose(rdb_file);
             return -1;
         }
-        total_sent += bytes_written;
     }
     
     fclose(rdb_file);
     
-    if (total_sent != (size_t)file_size) {
-        fprintf(stderr, "RDB file size mismatch: expected %ld, sent %zu\n", 
-                file_size, total_sent);
+    printf("Successfully sent RDB file to replica: %zu bytes\n");
+    return 0;
+}
+
+static int rename_rdb_file(const char *temp_path, const char *main_path)
+{
+    // First, backup existing main RDB file if it exists
+    char backup_path[256];
+    snprintf(backup_path, sizeof(backup_path), "%s.bak", main_path);
+    
+    // Check if main file exists
+    if (access(main_path, F_OK) == 0) {
+        // Remove old backup if it exists
+        if (access(backup_path, F_OK) == 0) {
+            if (unlink(backup_path) != 0) {
+                perror("Warning: Failed to remove old backup file");
+            }
+        }
+        
+        // Create backup of current main file
+        if (rename(main_path, backup_path) != 0) {
+            perror("Warning: Failed to backup existing RDB file");
+            // Continue anyway, but warn user
+        } else {
+            printf("Backed up existing %s to %s\n", main_path, backup_path);
+        }
+    }
+    
+    // Rename temp file to main file
+    if (rename(temp_path, main_path) != 0) {
+        perror("Failed to rename temp RDB file to main file");
+        
+        // Try to restore backup if rename failed and backup exists
+        if (access(backup_path, F_OK) == 0) {
+            if (rename(backup_path, main_path) == 0) {
+                printf("Restored backup file to %s\n", main_path);
+            } else {
+                fprintf(stderr, "Critical: Failed to restore backup file!\n");
+            }
+        }
         return -1;
     }
     
-    printf("Successfully sent RDB file to replica: %zu bytes\n", total_sent);
+    // Successfully renamed, remove backup after a successful operation
+    if (access(backup_path, F_OK) == 0) {
+        if (unlink(backup_path) != 0) {
+            perror("Warning: Failed to remove backup file after successful rename");
+        } else {
+            printf("Removed backup file %s after successful RDB update\n", backup_path);
+        }
+    }
+    
     return 0;
 }
 
