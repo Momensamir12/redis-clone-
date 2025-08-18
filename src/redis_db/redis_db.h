@@ -16,7 +16,6 @@ typedef struct redis_object {
 
 } redis_object_t;
 
-// Redis database structure
 typedef struct redis_db {
     hash_table_t *dict;     
     hash_table_t *expires;  

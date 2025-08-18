@@ -103,3 +103,71 @@ void hash_table_destroy(hash_table_t *ht) {
     free(ht->buckets);
     free(ht);
 }
+
+
+hash_table_iterator_t *hash_table_iterator_create(hash_table_t *ht) {
+    if (!ht) return NULL;
+    
+    hash_table_iterator_t *iter = malloc(sizeof(hash_table_iterator_t));
+    if (!iter) return NULL;
+    
+    iter->ht = ht;
+    iter->bucket_idx = 0;
+    iter->current = NULL;
+    iter->next = NULL;
+    
+    // Find first non-empty bucket
+    while (iter->bucket_idx < ht->size && !ht->buckets[iter->bucket_idx]) {
+        iter->bucket_idx++;
+    }
+    
+    if (iter->bucket_idx < ht->size) {
+        iter->current = ht->buckets[iter->bucket_idx];
+        if (iter->current) {
+            iter->next = iter->current->next;
+        }
+    }
+    
+    return iter;
+}
+
+int hash_table_iterator_next(hash_table_iterator_t *iter, char **key, void **data)
+{
+    if (!iter->current)
+        return 0;
+
+    // Return current element
+    if (key)
+        *key = iter->current->key;
+    if (data)
+        *data = iter->current->value;
+    
+    // Move to next element
+    iter->current = iter->next;
+    
+    // Update next pointer
+    if (iter->current) {
+        iter->next = iter->current->next;
+    } else {
+        // Current bucket exhausted, find next non-empty bucket
+        iter->bucket_idx++;
+        while (iter->bucket_idx < iter->ht->size && !iter->ht->buckets[iter->bucket_idx]) {
+            iter->bucket_idx++;
+        }
+        
+        if (iter->bucket_idx < iter->ht->size) {
+            iter->current = iter->ht->buckets[iter->bucket_idx];
+            if (iter->current) {
+                iter->next = iter->current->next;
+            }
+        }
+    }
+    
+    return 1;
+}
+
+void hash_table_iterator_destroy(hash_table_iterator_t *iter) {
+    if (iter) {
+        free(iter);
+    }
+}

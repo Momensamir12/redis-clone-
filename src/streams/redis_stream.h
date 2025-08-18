@@ -61,5 +61,6 @@ stream_entry_t *stream_entry_create(const char *id, const char **field_names,
                                    const char **values, size_t field_count);
 void stream_entry_destroy(stream_entry_t *entry);
 int get_next_stream_id(const char *current_id, char *next_id, size_t buffer_size);
+int parse_stream_id(const char *id_str, uint64_t *timestamp, uint64_t *sequence);
 
 #endif // REDIS_STREAM_H

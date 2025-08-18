@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <ctype.h>
 #include "../resp_praser/resp_parser.h"
@@ -15,6 +16,8 @@
 #include "../streams/redis_stream.h"
 #include "../lib/radix_tree.h"
 #include "../lib/utils.h"
+#include "../rdb/rdb.h"
+#include "../rdb/io_buffer.h"
 
 #define NULL_RESP_VALUE "$-1\r\n"
 #define PSYNC_RESPONSE_SIZE 65
@@ -1485,13 +1488,132 @@ char *handle_repliconf_command(redis_server_t *server, char **args, int argc, vo
 
 char *handle_psync_command(redis_server_t *server, char **args, int argc, void *client)
 {
-  char buffer[PSYNC_RESPONSE_SIZE];
-  int offset = 0;
-  if(strcmp(args[1], "?") == 0)
-  {
-    offset += snprintf(buffer + offset, sizeof(buffer) - offset, "FULLRESYNC %s %d", server->replication_info->replication_id,
-     server->replication_info->master_repl_offset);
-    return encode_simple_string(buffer);
-  }
-  return "-ERR ";
+    char buffer[PSYNC_RESPONSE_SIZE];
+    int offset = 0;
+    
+    if (strcmp(args[1], "?") == 0) {
+        // Send FULLRESYNC response first
+        offset += snprintf(buffer + offset, sizeof(buffer) - offset, 
+                          "FULLRESYNC %s %d", 
+                          server->replication_info->replication_id,
+                          server->replication_info->master_repl_offset);
+        
+        client_t *client_conn = (client_t *)client;
+        int client_fd = client_conn->fd; 
+        
+        // Create RDB snapshot
+        int rdb_fd = create_rdb_snapshot(server->db); 
+        if (rdb_fd == -1) {
+            return encode_simple_string("ERR Failed to create RDB snapshot");
+        }
+        close(rdb_fd); 
+        
+        char *response = encode_simple_string(buffer);
+        
+        write(client_fd, response, strlen(response));
+        free(response);
+        
+        if (send_rdb_file_to_client(client_fd, "temp.rdb") == -1) {
+            return NULL; 
+        }
+        
+        unlink("temp.rdb");
+        
+        return NULL; // We've already sent everything to the client
+    }
+    
+    return encode_simple_string("ERR Invalid PSYNC arguments");
+}
+
+static int create_rdb_snapshot(redis_db_t *db)
+{
+    int fd = open("temp.rdb", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd == -1) {
+        perror("Failed to create RDB file");
+        return -1;
+    }
+
+    io_buffer buffer;
+    buffer_init_with_fd(&buffer, fd);
+    
+    ssize_t bytes_written = rdb_save_database(&buffer, db);
+    if (bytes_written == -1) {
+        perror("Failed to save RDB database");
+        close(fd);
+        unlink("temp.rdb");
+        return -1;
+    }
+    
+    // Flush any remaining buffered data
+    if (!buffer_flush(&buffer)) {
+        perror("Failed to flush RDB buffer");
+        close(fd);
+        unlink("temp.rdb");
+        return -1;
+    }
+    
+    printf("RDB snapshot created successfully: %zd bytes written\n", bytes_written);
+    return fd;
+}
+
+static int send_rdb_file_to_client(int client_fd, const char *rdb_path)
+{
+    // Get file size
+    long file_size = get_file_size(rdb_path);
+    if (file_size == -1) {
+        fprintf(stderr, "Failed to get RDB file size\n");
+        return -1;
+    }
+    
+    // Send the bulk string header: $<length>\r\n
+    char header[64];
+    int header_len = snprintf(header, sizeof(header), "$%ld\r\n", file_size);
+    
+    if (write(client_fd, header, header_len) != header_len) {
+        perror("Failed to send RDB header to client");
+        return -1;
+    }
+    
+    // Open RDB file for reading
+    FILE *rdb_file = fopen(rdb_path, "rb");
+    if (!rdb_file) {
+        perror("Failed to open RDB file for reading");
+        return -1;
+    }
+    
+    // Send file contents in chunks
+    char file_buffer[8192];
+    size_t bytes_read;
+    size_t total_sent = 0;
+    
+    while ((bytes_read = fread(file_buffer, 1, sizeof(file_buffer), rdb_file)) > 0) {
+        ssize_t bytes_written = write(client_fd, file_buffer, bytes_read);
+        if (bytes_written != (ssize_t)bytes_read) {
+            perror("Failed to send RDB data to client");
+            fclose(rdb_file);
+            return -1;
+        }
+        total_sent += bytes_written;
+    }
+    
+    fclose(rdb_file);
+    
+    if (total_sent != (size_t)file_size) {
+        fprintf(stderr, "RDB file size mismatch: expected %ld, sent %zu\n", 
+                file_size, total_sent);
+        return -1;
+    }
+    
+    printf("Successfully sent RDB file to replica: %zu bytes\n", total_sent);
+    return 0;
+}
+
+static long get_file_size_stat(const char *filepath)
+{
+    struct stat st;
+    if (stat(filepath, &st) == 0) {
+        return st.st_size;
+    }
+    perror("Failed to stat file");
+    return -1;
 }

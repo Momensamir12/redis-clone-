@@ -49,7 +49,7 @@ void redis_stream_destroy(redis_stream_t *stream)
     free(stream->last_id);
     free(stream);
 }
-static int parse_stream_id(const char *id_str, uint64_t *timestamp, uint64_t *sequence)
+int parse_stream_id(const char *id_str, uint64_t *timestamp, uint64_t *sequence)
 {
     if (!id_str || !timestamp || !sequence)
         return -1;

@@ -31,4 +31,9 @@ add_executable(redis
     src/streams/redis_stream.c
     src/lib/radix_tree.c
     src/lib/utils.h
+    src/lib/sds.c
+    src/rdb/io_buffer.c
+    src/rdb/rdb.c
 )
+
+
