@@ -312,8 +312,7 @@ void test_rdb_save_load()
     printf("\n=== Test Complete ===\n");
 }
 
-// Note: Remove the helper function since you already have redis_object_create_stream
-// that takes a stream pointer in your redis_db file
+
 
 int main(int argc, char *argv[])
 {
@@ -327,7 +326,6 @@ int main(int argc, char *argv[])
     //test_rdb_save_load();
 
 
-    // Parse command line arguments
     for (int i = 1; i < argc; i++)
     {
         if (strcmp(argv[i], "--port") == 0)
