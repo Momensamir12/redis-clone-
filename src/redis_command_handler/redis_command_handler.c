@@ -21,7 +21,6 @@
 #include "../rdb/io_buffer.h"
 
 #define NULL_RESP_VALUE "$-1\r\n"
-#define PSYNC_RESPONSE_SIZE 65
 #define PSYNC_RESPONSE_SIZE 1024
 #define RDB_RESPONSE_SIZE 4096
 #define TEMP_RDB_FILE "temp.rdb"
@@ -1578,7 +1577,7 @@ static int create_rdb_snapshot(redis_db_t *db)
 static int send_rdb_file_to_client(int client_fd, const char *rdb_path)
 {
     // Get file size
-    long file_size = get_file_size(rdb_path);
+    long file_size = get_file_size_stat(rdb_path);
     if (file_size == -1) {
         fprintf(stderr, "Failed to get RDB file size\n");
         return -1;
