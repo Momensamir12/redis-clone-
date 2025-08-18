@@ -24,6 +24,7 @@ static void generate_replication_id(char *repl_id);
 static void connect_to_master(redis_server_t *server);
 static void propagate_to_replicas(redis_server_t *server, const char *command_buffer, size_t buffer_len);
 static int is_write_command(const char *buffer);
+static void process_multiple_commands(redis_server_t *server, char *buffer, size_t buffer_len);
 
 redis_server_t* redis_server_create(int port)
 {
@@ -474,13 +475,7 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
         }
     }
     else if (server->replication_info->handshake_step >= 4) {
-        printf("Processing command from master: %s", buffer);
-        
-        char *response = handle_command(server, buffer, NULL);
-        
-        if (response) {
-            free(response);
-        }
+        process_multiple_commands(server, buffer, bytes_read);
         
         printf("Command executed on replica\n");
     }
@@ -516,4 +511,32 @@ static int is_write_command(const char *buffer) {
     }
     
     return 0;
+}
+
+static void process_multiple_commands(redis_server_t *server, char *buffer, size_t buffer_len) {
+    // Split buffer by looking for "*3\r\n$3\r\nSET" pattern (or similar)
+    char *current = buffer;
+    char *next_command;
+    
+    while ((next_command = strstr(current + 1, "*")) != NULL) {
+        // Extract command from current to next_command
+        size_t cmd_len = next_command - current;
+        char *single_cmd = malloc(cmd_len + 1);
+        memcpy(single_cmd, current, cmd_len);
+        single_cmd[cmd_len] = '\0';
+        
+        printf("Executing: %s", single_cmd);
+        char *response = handle_command(server, single_cmd, NULL);
+        if (response) free(response);
+        free(single_cmd);
+        
+        current = next_command;
+    }
+    
+    // Process the last command
+    if (current < buffer + buffer_len) {
+        printf("Executing final: %s", current);
+        char *response = handle_command(server, current, NULL);
+        if (response) free(response);
+    }
 }
