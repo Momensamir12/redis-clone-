@@ -85,7 +85,7 @@ static int create_rdb_snapshot(redis_db_t *db);
 static int send_rdb_file_to_client(int client_fd, const char *rdb_path);
 static long get_file_size_stat(const char *filepath);
 static int rename_rdb_file(const char *temp_path, const char *main_path);
-
+int add_replica(redis_server_t *server, int replica_fd);
 // Parse all arguments into an array
 static char **parse_command_args(resp_buffer_t *resp_buffer, int *argc)
 {
@@ -1493,8 +1493,10 @@ char *handle_repliconf_command(redis_server_t *server, char **args, int argc, vo
 {
     if(server->replication_info->role != MASTER)
       return NULL;
-    client_t *c = (client_t *)client;
-    server->replication_info->replicas_fd[server->replication_info->connected_slaves++] = c->fd;
+    if (argc >= 3 && strcasecmp(args[1], "listening-port") == 0) {
+        client_t *c = (client_t *)client;
+        add_replica(server, c->fd);
+    }
     
     return encode_simple_string(strdup("OK"));
 }
@@ -1677,4 +1679,32 @@ static long get_file_size_stat(const char *filepath)
     }
     perror("Failed to stat file");
     return -1;
+}
+
+int add_replica(redis_server_t *server, int replica_fd) {
+    if (!server || !server->replication_info || server->replication_info->role != MASTER) {
+        return -1;
+    }
+    
+    replication_info_t *repl_info = server->replication_info;
+    
+    // Check if already registered
+    for (int i = 0; i < repl_info->connected_slaves; i++) {
+        if (repl_info->replicas_fd[i] == replica_fd) {
+            return 0;  // Already registered
+        }
+    }
+    
+    // Find empty slot
+    for (int i = 0; i < MAX_REPLICAS; i++) {
+        if (repl_info->replicas_fd[i] == -1) {  // Empty slot
+            repl_info->replicas_fd[i] = replica_fd;
+            repl_info->connected_slaves++;
+            printf("Added replica fd %d, total replicas: %d\n", 
+                   replica_fd, repl_info->connected_slaves);
+            return 0;
+        }
+    }
+    
+    return -1;  // No empty slots
 }
