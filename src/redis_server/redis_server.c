@@ -459,20 +459,30 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
     buffer[bytes_read] = '\0';
     printf("Received: %s", buffer);
 
-    // Check if response is positive, then move to next step
+    // Handle handshake responses
     if (strstr(buffer, "+PONG") || strstr(buffer, "+OK") || strstr(buffer, "+FULLRESYNC"))
     {
         server->replication_info->handshake_step++;
 
         if (server->replication_info->handshake_step < 4)
         {
-            // Send next command
             send_next_handshake_command(server);
         }
         else
         {
             printf("Handshake complete!\n");
         }
+    }
+    else if (server->replication_info->handshake_step >= 4) {
+        printf("Processing command from master: %s", buffer);
+        
+        char *response = handle_command(server, buffer, NULL);
+        
+        if (response) {
+            free(response);
+        }
+        
+        printf("Command executed on replica\n");
     }
 }
 
