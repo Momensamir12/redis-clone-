@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <ctype.h>
+#include <sys/stat.h>
 #include "../resp_praser/resp_parser.h"
 #include "redis_command_handler.h"
 #include "../redis_db/redis_db.h"
