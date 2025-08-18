@@ -77,6 +77,9 @@ void init_command_table(void)
 static int extract_timeout(char *timeout);
 static char *build_xread_response_for_blocked_client(redis_server_t *server, client_t *client, const char *stream_key, const char *new_id);
 static void add_command_to_transaction(redis_server_t *server, char *buffer, char **args, int argc, void *client);
+static int create_rdb_snapshot(redis_db_t *db);
+static int send_rdb_file_to_client(int client_fd, const char *rdb_path);
+static long get_file_size(const char *filepath);
 
 // Parse all arguments into an array
 static char **parse_command_args(resp_buffer_t *resp_buffer, int *argc)
