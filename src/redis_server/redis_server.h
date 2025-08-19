@@ -6,7 +6,7 @@
 #include "../redis_db/redis_db.h"
 #include "../lib/list.h"
 
-#define MAX_REPLICAS 5
+#define MAX_REPLICAS 12
 
 typedef enum {
     MASTER,
