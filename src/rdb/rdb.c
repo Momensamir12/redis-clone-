@@ -301,7 +301,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
 {
     if (!db) {
         fprintf(stderr, "Database parameter is NULL\n");
-        return;
+        return -1;
     }
 
     RDBLoader loader;
@@ -309,7 +309,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
     if (loader.fd == -1)
     {
         perror("open");
-        return;
+        return -1;
     }
 
     // 1. Verify magic number
@@ -318,7 +318,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
     {
         fprintf(stderr, "Invalid RDB file\n");
         close(loader.fd);
-        return;
+        return -1;
     }
 
     printf("RDB version: %.4s\n", magic + 5);
