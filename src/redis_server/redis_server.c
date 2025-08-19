@@ -891,7 +891,7 @@ static void complete_wait_command(redis_server_t *server, int acked_count) {
 
 void init_channel_data(redis_server_t *server)
 {
-    hash_table_create(server->channels_map);
+   server->channels_map = hash_table_create(1024);
 }
 
 
