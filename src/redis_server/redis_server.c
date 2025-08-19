@@ -34,7 +34,6 @@ static void prepare_rdb_reception(redis_server_t *server);
 void track_replica_bytes(redis_server_t *server, const char *command_buffer);
 static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read);
 static void handle_rdb_skip(redis_server_t *server, const char *data, ssize_t data_len);
-
 redis_server_t* redis_server_create(int port)
 {
     redis_server_t *redis = calloc(1, sizeof(redis_server_t));
@@ -505,8 +504,8 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
                 ssize_t rdb_bytes_in_buffer = bytes_read - (rdb_start - buffer);
                 
                 if (rdb_bytes_in_buffer > 0) {
-                    handle_rdb_skip(server, rdb_start, rdb_bytes_in_buffer);
-                }
+                   // handle_rdb_data(server, rdb_start, rdb_bytes_in_buffer);
+                
             }
             return;
         }
@@ -529,44 +528,6 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
         }
     }
 }
-
-static void handle_rdb_skip(redis_server_t *server, const char *data, ssize_t data_len)
-{
-    replication_info_t *repl = server->replication_info;
-    
-    // Calculate how much RDB data we still need to skip
-    ssize_t remaining_rdb = repl->expected_rdb_size - repl->received_rdb_size;
-    ssize_t rdb_bytes_in_this_buffer = (data_len < remaining_rdb) ? data_len : remaining_rdb;
-    
-    repl->received_rdb_size += rdb_bytes_in_this_buffer;
-    
-    printf("Skipping RDB data: %ld / %ld bytes (%.1f%%)\n", 
-           repl->received_rdb_size, repl->expected_rdb_size,
-           (double)repl->received_rdb_size / repl->expected_rdb_size * 100);
-    
-    // Check if RDB skipping is complete
-    if (repl->received_rdb_size >= repl->expected_rdb_size) {
-        printf("RDB skipping complete! Ready for commands.\n");
-        repl->receiving_rdb = 0;
-        
-        // Check if there are commands after the RDB data in the same buffer
-        if (data_len > rdb_bytes_in_this_buffer) {
-            const char *commands_start = data + rdb_bytes_in_this_buffer;
-            ssize_t commands_len = data_len - rdb_bytes_in_this_buffer;
-            
-            printf("Processing commands after RDB: %.*s", (int)commands_len, commands_start);
-            
-            // Process any commands that came after the RDB data
-            if (strstr(commands_start, "REPLCONF") && strstr(commands_start, "GETACK")) {
-                printf("Found REPLCONF GETACK after RDB data\n");
-                handle_master_replconf_getack(server, server->replication_info->master_fd, 
-                                             commands_start, commands_len);
-            } else {
-                track_replica_bytes(server, commands_start);
-                // Handle other commands if needed
-            }
-        }
-    }
 }
 
 static void prepare_rdb_reception(redis_server_t *server)
@@ -721,12 +682,7 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
     }
     
     if (server->replication_info->role == SLAVE) {
-        // Only track bytes for actual write commands, not replication commands
-        if (strstr(command_buffer, "REPLCONF") || strstr(command_buffer, "PING")) {
-            printf("Skipping byte tracking for replication command\n");
-            return;
-        }
-        
+        // Use strlen for now, but in a real implementation you'd want to track actual bytes
         size_t bytes = strlen(command_buffer);
         server->replication_info->replica_offset += bytes;
         printf("Replica offset updated: +%zu = %lu total bytes\n", 
@@ -737,6 +693,9 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
 static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read)
 {
     printf("Processing REPLCONF GETACK command\n");
+    
+    // Track the bytes for this GETACK command
+    track_replica_bytes(server, buffer);
     
     char offset_str[32];
     snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);

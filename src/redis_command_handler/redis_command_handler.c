@@ -1582,18 +1582,18 @@ char *handle_psync_command(redis_server_t *server, char **args, int argc, void *
         write(client_fd, response, strlen(response));
         free(response);
         
-        if (send_rdb_file_to_client(client_fd, TEMP_RDB_FILE) == -1) {
-            unlink(TEMP_RDB_FILE);
-            return NULL; 
-        }
+        // if (send_rdb_file_to_client(client_fd, TEMP_RDB_FILE) == -1) {
+        //     unlink(TEMP_RDB_FILE);
+        //     return NULL; 
+        // }
         
-        if (rename_rdb_file(TEMP_RDB_FILE, MAIN_RDB_FILE) == 0) {
-            printf("RDB snapshot successfully saved as %s\n", MAIN_RDB_FILE);
-        } else {
-            fprintf(stderr, "Warning: Failed to rename RDB file to main file, cleaning up temp file\n");
-            unlink(TEMP_RDB_FILE);
-        }
-        
+        // if (rename_rdb_file(TEMP_RDB_FILE, MAIN_RDB_FILE) == 0) {
+        //     printf("RDB snapshot successfully saved as %s\n", MAIN_RDB_FILE);
+        // } else {
+        //     fprintf(stderr, "Warning: Failed to rename RDB file to main file, cleaning up temp file\n");
+        //     unlink(TEMP_RDB_FILE);
+        // }
+        write(client_fd, "$0\r\n", 3);
         return NULL; 
     }
     
