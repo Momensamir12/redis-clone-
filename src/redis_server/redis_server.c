@@ -366,7 +366,13 @@ int redis_server_configure_replica(redis_server_t *server, char* master_host, in
     generate_replication_id(info->replication_id);
     
     info->replica_offset = 0;           // Bytes this replica has processed
-    info->master_repl_offset = 0;       
+    info->master_repl_offset = 0;
+    
+    // Initialize RDB-related fields
+    info->receiving_rdb = 0;
+    info->expected_rdb_size = 0;
+    info->received_rdb_size = 0;
+    info->rdb_fd = -1;
     
     server->replication_info = info;
     connect_to_master(server);
@@ -467,14 +473,10 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
     if (bytes_read <= 0)
         return;
 
-    if (server->replication_info->receiving_rdb) {
-        handle_rdb_data(server, buffer, bytes_read);
-        return;
-    }
-
     buffer[bytes_read] = '\0';
     printf("Received: %s", buffer);
 
+    // Handle handshake responses
     if (strstr(buffer, "+PONG") || strstr(buffer, "+OK")) {
         server->replication_info->handshake_step++;
 
@@ -484,36 +486,42 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
     }
     else if (strstr(buffer, "+FULLRESYNC")) {
         server->replication_info->handshake_step++;
-        printf("Handshake complete! Expecting RDB file...\n");
-        
-        //prepare_rdb_reception(server);
+        printf("Handshake complete! Ready for replication commands.\n");
     }
     else if (server->replication_info->handshake_step >= 4) {
+        // Skip RDB data for now - just look for the end of RDB
         if (buffer[0] == '$') {
+            // This is RDB size, just skip it
             server->replication_info->expected_rdb_size = atol(buffer + 1);
-            printf("Expecting RDB file of %ld bytes\n", server->replication_info->expected_rdb_size);
-            
+            printf("Skipping RDB file of %ld bytes\n", server->replication_info->expected_rdb_size);
             server->replication_info->receiving_rdb = 1;
+            return;
+        }
+        
+        // If we're "receiving" RDB, check if we've seen enough data to skip it
+        if (server->replication_info->receiving_rdb) {
+            server->replication_info->received_rdb_size += bytes_read;
+            printf("Skipping RDB data: %ld / %ld bytes\n", 
+                   server->replication_info->received_rdb_size, 
+                   server->replication_info->expected_rdb_size);
             
-            char *rdb_start = strstr(buffer, "\r\n");
-            if (rdb_start) {
-                rdb_start += 2; // Skip \r\n
-                int rdb_bytes = bytes_read - (rdb_start - buffer);
-                if (rdb_bytes > 0) {
-                    handle_rdb_data(server, rdb_start, rdb_bytes);
-                }
+            if (server->replication_info->received_rdb_size >= server->replication_info->expected_rdb_size) {
+                printf("RDB skipping complete! Ready for commands.\n");
+                server->replication_info->receiving_rdb = 0;
             }
-        } else {
-            if (strstr(buffer, "REPLCONF") && strstr(buffer, "GETACK")) {
-                // Handle REPLCONF GETACK specially
-                handle_master_replconf_getack(server, fd, buffer, bytes_read); 
-            }
-           else{     
+            return;
+        }
+        
+        // Handle actual replication commands
+        if (strstr(buffer, "REPLCONF") && strstr(buffer, "GETACK")) {
+            printf("Received REPLCONF GETACK command\n");
+            handle_master_replconf_getack(server, fd, buffer, bytes_read); 
+        }
+        else {     
             track_replica_bytes(server, buffer);
             process_multiple_commands(server, buffer, bytes_read);
             printf("Command executed on replica\n");
         }
-    }
     }
 }
 
