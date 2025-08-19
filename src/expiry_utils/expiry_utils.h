@@ -15,5 +15,5 @@ void set_expiry_ms(redis_object_t *obj, int milliseconds);
 
 // Check if expired
 int is_expired(redis_object_t *obj);
-
+int count_digits(uint64_t num);
 #endif
