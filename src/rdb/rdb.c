@@ -409,7 +409,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
         {
             // Put the type byte back for load_string_entry
             lseek(loader.fd, -1, SEEK_CUR);
-            if (load_string_entry(&loader, db) == -1) {
+            if (load_string_entry(&loader, db,0,0) == -1) {
                 fprintf(stderr, "Failed to load string entry\n");
                 close(loader.fd);
                 return -1;
@@ -460,11 +460,11 @@ int load_next_key_value(RDBLoader *loader, redis_db_t *db, uint64_t expire_ms, i
     
     // Put it back and call appropriate loader
     lseek(loader->fd, -1, SEEK_CUR);
-    
     int result = 0;
     switch(value_type) {
         case RDB_TYPE_STRING:
-            result = load_string_entry(loader, db);
+            if(has_expire)
+            result = load_string_entry(loader, db,has_expire, expire_ms);
             break;
         case RDB_TYPE_LIST:
             result = load_list_entry(loader, db);
@@ -489,7 +489,7 @@ int load_next_key_value(RDBLoader *loader, redis_db_t *db, uint64_t expire_ms, i
 }
 
 // Modified load_string_entry to handle the type byte properly
-int load_string_entry(RDBLoader *loader, redis_db_t *db)
+int load_string_entry(RDBLoader *loader, redis_db_t *db, int has_expire, uint64_t expiry)
 {
     // Read type byte (should be RDB_TYPE_STRING)
     unsigned char type_byte;
@@ -582,6 +582,8 @@ int load_string_entry(RDBLoader *loader, redis_db_t *db)
         printf("DB %d: Key='%s' → Value='%s' (STRING)\n", loader->dbnum, temp_key, temp_val);
         free(temp_val);
     }
+    if(has_expire)
+      obj->expiry = expiry;
 
     if (obj) {
         hash_table_set(db->dict, temp_key, obj);

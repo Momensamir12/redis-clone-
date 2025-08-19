@@ -33,7 +33,7 @@ redis_stream_t *load_stream(RDBLoader *loader);
 int load_stream_entry(RDBLoader *loader, redis_stream_t *stream);
 int load_stream_entry_full(RDBLoader *loader, redis_db_t *db);
 int rdb_load_full(const char *path, redis_db_t *db);
-int load_string_entry(RDBLoader *loader, redis_db_t *db);
+int load_string_entry(RDBLoader *loader, redis_db_t *db, int has_expire, uint64_t expiry);
 int load_list_entry(RDBLoader *loader, redis_db_t *db);
 int rdb_save_database_background(io_buffer *rdb, redis_db_t *db);
 int load_next_key_value(RDBLoader *loader, redis_db_t *db, uint64_t expire_ms, int has_expire);
