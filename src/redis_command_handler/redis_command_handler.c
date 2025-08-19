@@ -56,6 +56,7 @@ static redis_command_t commands[] = {
     {"replconf", handle_replconf_command, 2, -1},
     {"psync", handle_psync_command, 3, -1},
     {"wait", handle_wait_command, 3, 3},
+    {"config",handle_config_get_command,4 , -1},
     {NULL, NULL, 0, 0} // Sentinel
 };
 
