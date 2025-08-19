@@ -228,15 +228,23 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
             strcmp(cmd_lower, "ping") != 0 &&
             strcmp(cmd_lower, "quit") != 0 &&
             strcmp(cmd_lower, "reset") != 0) {
-            
+                    printf("HOW FEH EH 2\n");
+
             char response[256];
             snprintf(response, sizeof(response), 
                     "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n", 
                     args[0]);
-            
+                                printf("HOW FEH EH 3\n");
+
             free(cmd_lower);
+                                printf("HOW FEH EH 4\n");
+
             free_command_args(args, argc);
+                                printf("HOW FEH EH 5\n");
+
             free(resp_buffer);
+                                printf("HOW FEH EH 6\n");
+
             return strdup(response);
         }
     }
