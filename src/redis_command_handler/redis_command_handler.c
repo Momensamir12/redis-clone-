@@ -1557,6 +1557,7 @@ char *handle_replconf_command(redis_server_t *server, char **args, int argc, voi
 
 char *handle_psync_command(redis_server_t *server, char **args, int argc, void *client)
 {
+
     char buffer[PSYNC_RESPONSE_SIZE];
     int offset = 0;
     
@@ -1835,3 +1836,5 @@ int add_replica(redis_server_t *server, int replica_fd) {
     
     return -1;  // No empty slots
 }
+
+

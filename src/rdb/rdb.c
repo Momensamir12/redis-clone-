@@ -355,7 +355,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
             if (load_string_entry(&loader, db) == -1) {
                 fprintf(stderr, "Failed to load string entry\n");
                 close(loader.fd);
-                return;
+                return -1;
             }
             break;
         }
@@ -364,7 +364,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
             if (load_list_entry(&loader, db) == -1) {
                 fprintf(stderr, "Failed to load list entry\n");
                 close(loader.fd);
-                return;
+                return -1;
             }
             break;
         }
@@ -373,7 +373,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
             if (load_stream_entry_full(&loader, db) == -1) {
                 fprintf(stderr, "Failed to load stream entry\n");
                 close(loader.fd);
-                return;
+                return -1;
             }
             break;
         }
@@ -387,7 +387,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
     printf("Successfully loaded RDB file. Database now contains %zu keys.\n", db->dict->count);
     close(loader.fd);
 
-    return 1;
+    return 0;
 }
 
 // Helper function to load string entries
