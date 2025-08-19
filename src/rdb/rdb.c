@@ -308,11 +308,12 @@ int rdb_load_full(const char *path, redis_db_t *db)
     loader.fd = open(path, O_RDONLY);
     if (loader.fd == -1)
     {
-        perror("open");
-        return -1;
+        // File doesn't exist - not an error, just empty database
+        printf("RDB file %s not found, starting with empty database\n", path);
+        return 0;
     }
 
-    // 1. Verify magic number
+    // 1. Verify magic number and version
     char magic[9];
     if (read(loader.fd, magic, 9) != 9 || memcmp(magic, "REDIS", 5) != 0)
     {
@@ -331,27 +332,83 @@ int rdb_load_full(const char *path, redis_db_t *db)
             break;
 
         if (type == 0xFF)
-        { // EOF marker
-            printf("End of RDB file\n");
+        { 
+            // EOF marker - skip 8-byte checksum
+            unsigned char checksum[8];
+            read(loader.fd, checksum, 8);
+            printf("End of RDB file (checksum read)\n");
             break;
         }
 
         switch (type)
         {
-        case 0xFE:
-        { // Database selector
-            uint8_t dbnum;
-            read(loader.fd, &dbnum, 1);
-            loader.dbnum = dbnum;
-            printf("Selecting DB %d\n", dbnum);
+        case 0xFA: // Metadata section
+        {
+            // Skip metadata name
+            uint32_t name_len = rdb_load_len(&loader);
+            char *name = malloc(name_len + 1);
+            if (name) {
+                read(loader.fd, name, name_len);
+                name[name_len] = '\0';
+                printf("Skipping metadata: %s\n", name);
+                free(name);
+            } else {
+                lseek(loader.fd, name_len, SEEK_CUR);
+            }
+            
+            // Skip metadata value
+            uint32_t value_len = rdb_load_len(&loader);
+            lseek(loader.fd, value_len, SEEK_CUR);
             break;
         }
-        case RDB_ENC_INT8:
+        case 0xFE: // Database selector
         {
+            loader.dbnum = rdb_load_len(&loader);
+            printf("Selecting DB %d\n", loader.dbnum);
+            break;
+        }
+        case 0xFB: // Hash table size info
+        {
+            uint32_t keys_size = rdb_load_len(&loader);
+            uint32_t expires_size = rdb_load_len(&loader);
+            printf("Hash table sizes - keys: %u, expires: %u\n", keys_size, expires_size);
+            break;
+        }
+        case 0xFC: // Expire time in milliseconds
+        {
+            uint64_t expire_ms;
+            read(loader.fd, &expire_ms, 8);
+            // Note: expire_ms is in little-endian, may need conversion
+            printf("Key has expire in ms: %llu\n", (unsigned long long)expire_ms);
             
+            // Now read the actual key-value pair that follows
+            if (!load_next_key_value(&loader, db, expire_ms, 1)) {
+                fprintf(stderr, "Failed to load key-value after expire\n");
+                close(loader.fd);
+                return -1;
+            }
+            break;
+        }
+        case 0xFD: // Expire time in seconds
+        {
+            uint32_t expire_sec;
+            read(loader.fd, &expire_sec, 4);
+            // Note: expire_sec is in little-endian, may need conversion
+            uint64_t expire_ms = (uint64_t)expire_sec * 1000;
+            printf("Key has expire in seconds: %u\n", expire_sec);
+            
+            // Now read the actual key-value pair that follows
+            if (!load_next_key_value(&loader, db, expire_ms, 0)) {
+                fprintf(stderr, "Failed to load key-value after expire\n");
+                close(loader.fd);
+                return -1;
+            }
+            break;
         }
         case RDB_TYPE_STRING: // 0x00
         {
+            // Put the type byte back for load_string_entry
+            lseek(loader.fd, -1, SEEK_CUR);
             if (load_string_entry(&loader, db) == -1) {
                 fprintf(stderr, "Failed to load string entry\n");
                 close(loader.fd);
@@ -361,6 +418,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
         }
         case RDB_TYPE_LIST: // 0x01
         {
+            lseek(loader.fd, -1, SEEK_CUR);
             if (load_list_entry(&loader, db) == -1) {
                 fprintf(stderr, "Failed to load list entry\n");
                 close(loader.fd);
@@ -370,6 +428,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
         }
         case RDB_TYPE_STREAM: // 0x0F
         {
+            lseek(loader.fd, -1, SEEK_CUR);
             if (load_stream_entry_full(&loader, db) == -1) {
                 fprintf(stderr, "Failed to load stream entry\n");
                 close(loader.fd);
@@ -379,7 +438,7 @@ int rdb_load_full(const char *path, redis_db_t *db)
         }
         default:
             fprintf(stderr, "Unknown/Unsupported type: 0x%02X\n", type);
-            // Try to skip this entry - this is risky but better than crashing
+            // Try to continue
             break;
         }
     }
@@ -390,9 +449,59 @@ int rdb_load_full(const char *path, redis_db_t *db)
     return 0;
 }
 
-// Helper function to load string entries
+// New helper function to load a key-value pair (potentially with expire)
+int load_next_key_value(RDBLoader *loader, redis_db_t *db, uint64_t expire_ms, int has_expire)
+{
+    // Read the value type
+    unsigned char value_type;
+    if (read(loader->fd, &value_type, 1) != 1) {
+        return 0;
+    }
+    
+    // Put it back and call appropriate loader
+    lseek(loader->fd, -1, SEEK_CUR);
+    
+    int result = 0;
+    switch(value_type) {
+        case RDB_TYPE_STRING:
+            result = load_string_entry(loader, db);
+            break;
+        case RDB_TYPE_LIST:
+            result = load_list_entry(loader, db);
+            break;
+        case RDB_TYPE_STREAM:
+            result = load_stream_entry_full(loader, db);
+            break;
+        default:
+            fprintf(stderr, "Unknown value type after expire: 0x%02X\n", value_type);
+            return 0;
+    }
+    
+    // If we successfully loaded and have an expire, set it
+    // Note: You'll need to implement expire setting in your database
+    if (result == 0 && has_expire) {
+        // TODO: Set expire on the last loaded key
+        // You might need to modify your load functions to return the key
+        // or store it in the loader structure
+    }
+    
+    return result == 0 ? 1 : 0;
+}
+
+// Modified load_string_entry to handle the type byte properly
 int load_string_entry(RDBLoader *loader, redis_db_t *db)
 {
+    // Read type byte (should be RDB_TYPE_STRING)
+    unsigned char type_byte;
+    if (read(loader->fd, &type_byte, 1) != 1) {
+        return -1;
+    }
+    
+    if (type_byte != RDB_TYPE_STRING) {
+        fprintf(stderr, "Expected string type, got 0x%02X\n", type_byte);
+        return -1;
+    }
+    
     // Read key
     uint32_t key_len = rdb_load_len(loader);
     char *temp_key = malloc(key_len + 1);
@@ -403,31 +512,61 @@ int load_string_entry(RDBLoader *loader, redis_db_t *db)
     read(loader->fd, temp_key, key_len);
     temp_key[key_len] = '\0';
 
-    // Check first byte to see if it's encoded integer or string
+    // Read value - check for special encodings
     unsigned char first_byte;
     if (read(loader->fd, &first_byte, 1) != 1) {
         free(temp_key);
         return -1;
     }
 
-    redis_object_t *obj;
+    redis_object_t *obj = NULL;
     
-    if (first_byte == RDB_ENC_INT8) { // 0xF0 - INT8 encoding
-        int8_t intval;
-        read(loader->fd, &intval, 1);
+    // Check if it's a special encoding (0xC0-0xC3)
+    if ((first_byte & 0xC0) == 0xC0) {
+        uint8_t encoding_type = first_byte & 0x3F;
         
-        // Create number object
-        char int_str[32];
-        snprintf(int_str, sizeof(int_str), "%d", intval);
-        obj = redis_object_create_number(int_str);
-        
-        printf("DB %d: Key='%s' → Value=%d (NUMBER)\n", loader->dbnum, temp_key, intval);
+        if (first_byte == 0xC0) { // 8-bit integer
+            int8_t intval;
+            read(loader->fd, &intval, 1);
+            
+            char int_str[32];
+            snprintf(int_str, sizeof(int_str), "%d", intval);
+            obj = redis_object_create_number(int_str);
+                printf("DB %d: Key='%s' → Value=%d (INT8)\n", loader->dbnum, temp_key, intval);
+        }
+        else if (first_byte == 0xC1) { // 16-bit integer (little-endian)
+            uint16_t intval;
+            read(loader->fd, &intval, 2);
+            // Convert from little-endian if needed
+            
+            char int_str[32];
+            snprintf(int_str, sizeof(int_str), "%u", intval);
+            obj = redis_object_create_number(int_str);
+            
+            printf("DB %d: Key='%s' → Value=%u (INT16)\n", loader->dbnum, temp_key, intval);
+        }
+        else if (first_byte == 0xC2) { // 32-bit integer (little-endian)
+            uint32_t intval;
+            read(loader->fd, &intval, 4);
+            // Convert from little-endian if needed
+            
+            char int_str[32];
+            snprintf(int_str, sizeof(int_str), "%u", intval);
+            obj = redis_object_create_number(int_str);
+            
+            printf("DB %d: Key='%s' → Value=%u (INT32)\n", loader->dbnum, temp_key, intval);
+        }
+        else if (first_byte == 0xC3) { // LZF compressed string
+            fprintf(stderr, "LZF compression not supported\n");
+            free(temp_key);
+            return -1;
+        }
     }
     else {
-        // It's a string length byte - seek back and read as length
+        // Regular string - the first byte is the length encoding
         lseek(loader->fd, -1, SEEK_CUR);
-        
         uint32_t val_len = rdb_load_len(loader);
+        
         char *temp_val = malloc(val_len + 1);
         if (!temp_val) {
             free(temp_key);
@@ -452,9 +591,19 @@ int load_string_entry(RDBLoader *loader, redis_db_t *db)
     return obj ? 0 : -1;
 }
 
-// Helper function to load list entries
 int load_list_entry(RDBLoader *loader, redis_db_t *db)
 {
+    // Read type byte (should be RDB_TYPE_LIST)
+    unsigned char type_byte;
+    if (read(loader->fd, &type_byte, 1) != 1) {
+        return -1;
+    }
+    
+    if (type_byte != RDB_TYPE_LIST) {
+        fprintf(stderr, "Expected list type, got 0x%02X\n", type_byte);
+        return -1;
+    }
+    
     // Read key
     uint32_t key_len = rdb_load_len(loader);
     char *temp_key = malloc(key_len + 1);

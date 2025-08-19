@@ -57,6 +57,8 @@ static redis_command_t commands[] = {
     {"psync", handle_psync_command, 3, -1},
     {"wait", handle_wait_command, 3, 3},
     {"config",handle_config_get_command, 2 , -1},
+    {"keys", handle_keys_command, 2, 2},
+
     {NULL, NULL, 0, 0} // Sentinel
 };
 
@@ -1878,4 +1880,65 @@ char *handle_config_get_command(redis_server_t *server, char **args, int argc, v
     }
     
     return strdup("-ERR unknown CONFIG subcommand\r\n");
+}
+
+char *handle_keys_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    if (argc != 2) {
+        return strdup("-ERR wrong number of arguments for 'keys' command\r\n");
+    }
+    
+    char *pattern = args[1];
+    
+    // For now, only support "*" pattern (all keys)
+    if (strcmp(pattern, "*") != 0) {
+        // For unsupported patterns, return empty array
+        return strdup("*0\r\n");
+    }
+    
+    // Get all keys from the database
+    hash_table_iterator_t *iter = hash_table_iterator_create(server->db->dict);
+    if (!iter) {
+        return strdup("*0\r\n");
+    }
+    
+    // Count keys first
+    int key_count = 0;
+    char *key;
+    void *value;
+    
+    while (hash_table_iterator_next(iter, &key, &value)) {
+        key_count++;
+    }
+    
+    if (key_count == 0) {
+        hash_table_iterator_destroy(iter);
+        return strdup("*0\r\n");
+    }
+    
+    // Collect all keys
+    char **keys_array = malloc(key_count * sizeof(char*));
+    if (!keys_array) {
+        hash_table_iterator_destroy(iter);
+        return strdup("-ERR out of memory\r\n");
+    }
+    
+    // Reset iterator and collect keys
+    hash_table_iterator_destroy(iter);
+    iter = hash_table_iterator_create(server->db->dict);
+    
+    int i = 0;
+    while (hash_table_iterator_next(iter, &key, &value) && i < key_count) {
+        keys_array[i] = key;  // Use the key directly from the hash table
+        i++;
+    }
+    
+    // Encode as RESP array
+    char *response = encode_resp_array(keys_array, i);
+    
+    // Cleanup
+    free(keys_array);
+    hash_table_iterator_destroy(iter);
+    
+    return response;
 }

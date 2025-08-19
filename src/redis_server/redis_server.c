@@ -146,7 +146,12 @@ void redis_server_destroy(redis_server_t *redis) {
 
 void redis_server_run(redis_server_t *redis) {
     if (!redis || !redis->event_loop) return;
-    
+    if(redis->rdb_filename && redis->rdb_dir)
+    {
+    char rdb_path[512];
+    snprintf(rdb_path, sizeof(rdb_path), "%s/%s", redis->rdb_dir, redis->rdb_filename);
+    rdb_load_full(rdb_path, redis);
+    }
     event_loop_run(redis->event_loop);
 }
 
@@ -874,3 +879,5 @@ static void complete_wait_command(redis_server_t *server, int acked_count) {
     server->pending_wait.active = 0;
     server->pending_wait.client = NULL;
 }
+
+
