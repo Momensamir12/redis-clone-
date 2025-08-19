@@ -16,6 +16,7 @@
 #include "../lib/utils.h"
 #include "../rdb/io_buffer.h"
 #include "../rdb/rdb.h"
+#include "../expiry_utils/expiry_utils.h"
 
 static void handle_server_accept(event_loop_t *loop, int fd, uint32_t events, void *data);
 static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void *data);
