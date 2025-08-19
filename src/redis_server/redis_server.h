@@ -23,10 +23,10 @@ typedef struct replication_info{
     u_int16_t master_fd;
     uint16_t handshake_step;
     size_t replicas_fd[MAX_REPLICAS];
-
+    
     uint64_t replica_offset;                   
     uint64_t replica_ack_offsets[MAX_REPLICAS]; 
-
+    int rdb_received;
     int receiving_rdb;
     long expected_rdb_size;
     long received_rdb_size;
