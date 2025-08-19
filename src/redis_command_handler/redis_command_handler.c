@@ -1496,64 +1496,70 @@ char *handle_replconf_command(redis_server_t *server, char **args, int argc, voi
         return strdup("-ERR wrong number of arguments for 'replconf' command\r\n");
     }
     
-    // Handle REPLCONF GETACK (sent by master to replica)
+    // Handle REPLCONF GETACK (sent by test clients to replica)
     if (strcasecmp(args[1], "getack") == 0) {
-        if (server->replication_info->role != SLAVE) {
+        if (server->replication_info && server->replication_info->role == SLAVE) {
+            // Build response: *3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$<digits>\r\n<offset>\r\n
+            char offset_str[32];
+            snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
+            int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
+            
+            char response[256];
+            snprintf(response, sizeof(response), 
+                    "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
+                    offset_digits, offset_str);
+            
+            printf("Sending ACK with offset: %lu\n", server->replication_info->replica_offset);
+            return strdup(response);
+        } else {
             return strdup("-ERR GETACK can only be sent to replicas\r\n");
         }
-        
-        // Build response: *3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$<digits>\r\n<offset>\r\n
-        char offset_str[32];
-        snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
-        int offset_digits = count_digits(server->replication_info->replica_offset);
-        
-        char response[256];
-        snprintf(response, sizeof(response), 
-                "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
-                offset_digits, offset_str);
-        
-        printf("Sending ACK with offset: %lu\n", server->replication_info->replica_offset);
-        return strdup(response);
     }
     
     // Handle REPLCONF ACK (sent by replica to master)
     else if (strcasecmp(args[1], "ack") == 0) {
-        if (server->replication_info->role != MASTER) {
+        if (server->replication_info && server->replication_info->role == MASTER) {
+            if (argc < 3) {
+                return strdup("-ERR wrong number of arguments for 'replconf ack' command\r\n");
+            }
+            
+            client_t *c = (client_t *)client;
+            uint64_t ack_offset = strtoull(args[2], NULL, 10);
+            
+            // Find which replica this is and update its ACK offset
+            for (int i = 0; i < MAX_REPLICAS; i++) {
+                if (server->replication_info->replicas_fd[i] == c->fd) {
+                    server->replication_info->replica_ack_offsets[i] = ack_offset;
+                    printf("Updated replica %d (fd=%d) ACK offset to %lu\n", 
+                           i, c->fd, ack_offset);
+                    break;
+                }
+            }
+            
+            return NULL; // No response needed
+        } else {
             return strdup("-ERR ACK can only be sent to masters\r\n");
         }
-        
-        if (argc < 3) {
-            return strdup("-ERR wrong number of arguments for 'replconf ack' command\r\n");
+    }
+    
+    // Handle REPLCONF listening-port (sent by replica to master during handshake)
+    else if (strcasecmp(args[1], "listening-port") == 0) {
+        if (server->replication_info && server->replication_info->role == MASTER) {
+            client_t *c = (client_t *)client;
+            add_replica(server, c->fd);
+            return encode_simple_string("OK");
         }
-        
-        client_t *c = (client_t *)client;
-        uint64_t ack_offset = strtoull(args[2], NULL, 10);
-        
-        // Find which replica this is and update its ACK offset
-        for (int i = 0; i < MAX_REPLICAS; i++) {
-            if (server->replication_info->replicas_fd[i] == c->fd) {
-                server->replication_info->replica_ack_offsets[i] = ack_offset;
-                printf("Updated replica %d (fd=%d) ACK offset to %lu\n", 
-                       i, c->fd, ack_offset);
-                break;
-            }
-        }
-        
         return NULL;
     }
     
-    else if (strcasecmp(args[1], "listening-port") == 0) {
-        if (server->replication_info->role != MASTER) {
-            return NULL;
+    // Handle REPLCONF capa (sent by replica to master during handshake)
+    else if (strcasecmp(args[1], "capa") == 0) {
+        if (server->replication_info && server->replication_info->role == MASTER) {
+            // For now, just acknowledge the capability
+            printf("Received replica capability: %s\n", argc > 2 ? args[2] : "unknown");
+            return encode_simple_string("OK");
         }
-        
-        client_t *c = (client_t *)client;
-        add_replica(server, c->fd);
-        return encode_simple_string("OK");
-    }
-    else if (strcasecmp(args[1], "psync2"))
-    {
-        return encode_simple_string("OK");
+        return strdup("-ERR CAPA can only be sent to masters\r\n");
     }
     
     return strdup("-ERR unknown REPLCONF option\r\n");
