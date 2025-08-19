@@ -23,8 +23,11 @@
 #define NULL_RESP_VALUE "$-1\r\n"
 #define PSYNC_RESPONSE_SIZE 1024
 #define RDB_RESPONSE_SIZE 4096
-#define TEMP_RDB_FILE "temp.rdb"
-#define MAIN_RDB_FILE "dump.rdb"
+#define RDB_DEFAULT_DIR "/tmp"
+#define RDB_TEMP_FILE "temp.rdb"
+#define RDB_DEFAULT_FILE "dump.rdb"
+#define RESP_DEFAULT_ERROR "-ERR unknown error\r\n"
+#define RESP_MEMORY_ERROR "-ERR out of memory\r\n"
 // Global command hash table
 static hash_table_t *command_table = NULL;
 
@@ -917,7 +920,7 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
         case 6: // Special case for 0-0
             return strdup("-ERR The ID specified in XADD must be greater than 0-0\r\n");
         default:
-            return strdup("-ERR unknown error\r\n");
+            return strdup(RESP_DEFAULT_ERROR);
         }
     }
 
@@ -1591,16 +1594,16 @@ char *handle_psync_command(redis_server_t *server, char **args, int argc, void *
         write(client_fd, response, strlen(response));
         free(response);
         
-        if (send_rdb_file_to_client(client_fd, TEMP_RDB_FILE) == -1) {
-            unlink(TEMP_RDB_FILE);
+        if (send_rdb_file_to_client(client_fd, RDB_TEMP_FILE) == -1) {
+            unlink(RDB_TEMP_FILE);
             return NULL; 
         }
         
-        if (rename_rdb_file(TEMP_RDB_FILE, MAIN_RDB_FILE) == 0) {
-            printf("RDB snapshot successfully saved as %s\n", MAIN_RDB_FILE);
+        if (rename_rdb_file(RDB_TEMP_FILE, RDB_DEFAULT_FILE) == 0) {
+            printf("RDB snapshot successfully saved as %s\n", RDB_DEFAULT_FILE);
         } else {
             fprintf(stderr, "Warning: Failed to rename RDB file to main file, cleaning up temp file\n");
-            unlink(TEMP_RDB_FILE);
+            unlink(RDB_TEMP_FILE);
         }
         
         return NULL; 
@@ -1675,7 +1678,7 @@ char *handle_wait_command(redis_server_t *server, char **args, int argc, void *c
 
 static int create_rdb_snapshot(redis_db_t *db)
 {
-    int fd = open(TEMP_RDB_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int fd = open(RDB_TEMP_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd == -1) {
         perror("Failed to create RDB file");
         return -1;
@@ -1688,7 +1691,7 @@ static int create_rdb_snapshot(redis_db_t *db)
     if (bytes_written == -1) {
         perror("Failed to save RDB database");
         close(fd);
-        unlink(TEMP_RDB_FILE);
+        unlink(RDB_TEMP_FILE);
         return -1;
     }
     
@@ -1696,24 +1699,22 @@ static int create_rdb_snapshot(redis_db_t *db)
     if (!buffer_flush(&buffer)) {
         perror("Failed to flush RDB buffer");
         close(fd);
-        unlink(TEMP_RDB_FILE);
+        unlink(RDB_TEMP_FILE);
         return -1;
     }
     
-    printf("RDB snapshot created successfully: %zd bytes written to %s\n", bytes_written, TEMP_RDB_FILE);
+    printf("RDB snapshot created successfully: %zd bytes written to %s\n", bytes_written, RDB_TEMP_FILE);
     return fd;
 }
 
 static int send_rdb_file_to_client(int client_fd, const char *rdb_path)
 {
-    // Get file size
     long file_size = get_file_size_stat(rdb_path);
     if (file_size == -1) {
         fprintf(stderr, "Failed to get RDB file size\n");
         return -1;
     }
     
-    // Send the bulk string header: $<length>\r\n
     char header[64];
     int header_len = snprintf(header, sizeof(header), "$%ld\r\n", file_size);
     
@@ -1838,3 +1839,42 @@ int add_replica(redis_server_t *server, int replica_fd) {
 }
 
 
+char *handle_config_get_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    if (argc < 3) {
+        return strdup("-ERR wrong number of arguments for 'config get' command\r\n");
+    }
+    
+    if (strcmp(args[1], "get") == 0) {
+        char *param = args[2];
+        
+        char **response_args = malloc(2 * sizeof(char*));
+        if (!response_args) {
+            return strdup(RESP_MEMORY_ERROR);
+        }
+        
+        response_args[0] = strdup(param);  
+        
+        if (strcmp(param, "dir") == 0) {
+            response_args[1] = strdup(RDB_DEFAULT_DIR);  
+        }
+        else if (strcmp(param, "dbfilename") == 0) {
+            response_args[1] = strdup(RDB_DEFAULT_FILE);  
+        }
+        else {
+            free(response_args[0]);
+            free(response_args);
+            return encode_resp_array(NULL, 0);  
+        }
+        
+        char *result = encode_resp_array(response_args, 2);
+        
+        free(response_args[0]);
+        free(response_args[1]);
+        free(response_args);
+        
+        return result;
+    }
+    
+    return strdup("-ERR unknown CONFIG subcommand\r\n");
+}
