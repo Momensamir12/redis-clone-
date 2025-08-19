@@ -1496,10 +1496,8 @@ char *handle_replconf_command(redis_server_t *server, char **args, int argc, voi
         return strdup("-ERR wrong number of arguments for 'replconf' command\r\n");
     }
     
-    // Handle REPLCONF GETACK (sent by test clients to replica)
     if (strcasecmp(args[1], "getack") == 0) {
         if (server->replication_info && server->replication_info->role == SLAVE) {
-            // Build response: *3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$<digits>\r\n<offset>\r\n
             char offset_str[32];
             snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
             int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
