@@ -1603,7 +1603,7 @@ char *handle_psync_command(redis_server_t *server, char **args, int argc, void *
         //     fprintf(stderr, "Warning: Failed to rename RDB file to main file, cleaning up temp file\n");
         //     unlink(TEMP_RDB_FILE);
         // }
-        write(client_fd, "$0\r\n", 3);
+        write(client_fd, "$0\r\n", 4);
         return NULL; 
     }
     
