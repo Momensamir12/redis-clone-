@@ -219,19 +219,26 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         return strdup(response);
     }
     if (c && c->sub_mode) {
-    // if (!is_pubsub_command(cmd_lower)) {
-    //     // DON'T free anything here - just return
-    //     // Let the normal cleanup at the end handle it
-    //     char *error_msg = strdup("-ERR Can't execute 'set': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n");
-        
-    //     // Set a flag to skip normal processing
-    //     free(cmd_lower);
-    //     free_command_args(args, argc);
-    //     free(resp_buffer);
-    //     return error_msg;
-    // }
-    printf("CHECK IS WORKING \n");
-}
+        // Only allow specific commands in pub/sub mode
+        if (strcmp(cmd_lower, "subscribe") != 0 && 
+            strcmp(cmd_lower, "unsubscribe") != 0 &&
+            strcmp(cmd_lower, "psubscribe") != 0 &&
+            strcmp(cmd_lower, "punsubscribe") != 0 &&
+            strcmp(cmd_lower, "ping") != 0 &&
+            strcmp(cmd_lower, "quit") != 0 &&
+            strcmp(cmd_lower, "reset") != 0) {
+            
+            char response[256];
+            snprintf(response, sizeof(response), 
+                    "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n", 
+                    args[0]);
+            
+            free(cmd_lower);
+            free_command_args(args, argc);
+            free(resp_buffer);
+            return strdup(response);
+        }
+    }
     // Call handler
     char *response = cmd->handler(server, args, argc, client);
 
