@@ -32,7 +32,6 @@ static int load_rdb_file(redis_server_t *server, const char *rdb_path);
 static void handle_rdb_data(redis_server_t *server, const char *data, ssize_t data_len);
 static void prepare_rdb_reception(redis_server_t *server);
 void track_replica_bytes(redis_server_t *server, const char *command_buffer);
-static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read);
 static void handle_replication_command(redis_server_t *server, int fd, const char *buffer, ssize_t bytes_read);
 static void process_multiple_replication_commands(redis_server_t *server, const char *buffer, ssize_t buffer_len);
 static void process_rdb_data(redis_server_t *server, const char *data, ssize_t data_len);
@@ -750,12 +749,13 @@ static void process_multiple_replication_commands(redis_server_t *server, const 
             free(response); // Don't send responses back to master for replication commands
         }
         
-        // Track bytes only for write commands
-        if (is_write_command(single_cmd)) {
+        // Track bytes for ALL commands in replication (not just write commands)
+        // Skip only REPLCONF GETACK commands since they're queries from master
+        if (!(strstr(single_cmd, "REPLCONF") && strstr(single_cmd, "GETACK"))) {
             server->replication_info->replica_offset += cmd_len;
             printf("Updated replica offset: +%zu = %lu\n", cmd_len, server->replication_info->replica_offset);
         } else {
-            printf("Skipping offset update for non-write command\n");
+            printf("Skipping offset update for REPLCONF GETACK command\n");
         }
         
         free(single_cmd);
