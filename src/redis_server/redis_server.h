@@ -53,7 +53,9 @@ typedef struct redis_server {
     redis_list_t *clients;
     redis_list_t *blocked_clients;
     replication_info_t *replication_info;
-    wait_state_t pending_wait; 
+    wait_state_t pending_wait;
+    char *rdb_dir;        // Directory for RDB files
+    char *rdb_filename; 
 
 } redis_server_t;
 

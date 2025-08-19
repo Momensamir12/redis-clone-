@@ -1857,10 +1857,10 @@ char *handle_config_get_command(redis_server_t *server, char **args, int argc, v
         response_args[0] = strdup(param);  
         
         if (strcmp(param, "dir") == 0) {
-            response_args[1] = strdup(RDB_DEFAULT_DIR);  
+            response_args[1] = strdup(server->rdb_dir);  
         }
         else if (strcmp(param, "dbfilename") == 0) {
-            response_args[1] = strdup(RDB_DEFAULT_FILE);  
+            response_args[1] = strdup(server->rdb_dir);  
         }
         else {
             free(response_args[0]);

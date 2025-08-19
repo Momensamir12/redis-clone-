@@ -323,6 +323,8 @@ int main(int argc, char *argv[])
     int8_t is_replica = 0;
     char *master_host = NULL;
     int master_port = 0;
+    char *rdb_dir = "/tmp";           
+    char *rdb_filename = "dump.rdb";  
     //test_rdb_save_load();
 
 
@@ -406,10 +408,27 @@ int main(int argc, char *argv[])
             print_usage(argv[0]);
             return 0;
         }
-        else if(strcmp(argv[i], "--dir") == 0)
+              else if (strcmp(argv[i], "--dir") == 0)
         {
-            i+=3;
-            continue;
+            if (i + 1 >= argc)
+            {
+                fprintf(stderr, "Error: --dir requires a value\n");
+                print_usage(argv[0]);
+                return 1;
+            }
+            rdb_dir = argv[i + 1];
+            i++; // Skip the next argument
+        }
+        else if (strcmp(argv[i], "--dbfilename") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                fprintf(stderr, "Error: --dbfilename requires a value\n");
+                print_usage(argv[0]);
+                return 1;
+            }
+            rdb_filename = argv[i + 1];
+            i++; // Skip the next argument
         }
         else
         {
@@ -457,7 +476,8 @@ int main(int argc, char *argv[])
         }
     }
 
-
+    g_server->rdb_filename = rdb_filename;
+    g_server->rdb_dir = rdb_dir;
     redis_server_run(g_server);
 
     // Cleanup
