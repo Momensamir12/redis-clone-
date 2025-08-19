@@ -198,7 +198,6 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
 
     // Look up and execute command normally...
     redis_command_t *cmd = (redis_command_t *)hash_table_get(command_table, cmd_lower);
-    free(cmd_lower);
 
     if (!cmd)
     {
@@ -232,7 +231,7 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
     }
     
     char *response = cmd->handler(server, args, argc, client);
-
+    free(cmd_lower);
     free_command_args(args, argc);
     free(resp_buffer);
     return response;
