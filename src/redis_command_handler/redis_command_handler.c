@@ -218,20 +218,20 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         free(resp_buffer);
         return strdup(response);
     }
-    //    if (c && c->sub_mode) {
-    //     if (!is_pubsub_command(cmd_lower)) {
-    //         char response[256];
-    //         snprintf(response, sizeof(response), 
-    //                 "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n", 
-    //                 args[0]);
-            
-    //         free(cmd_lower);
-    //         free_command_args(args, argc);
-    //         free(resp_buffer);
-    //         return strdup(response);
-    //     }
-    // }
-
+if (c && c->sub_mode) {
+    if (!is_pubsub_command(cmd_lower)) {
+        // DON'T free anything here - just return
+        // Let the normal cleanup at the end handle it
+        char *error_msg = strdup("-ERR Can't execute 'set': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n");
+        
+        // Set a flag to skip normal processing
+        free(cmd_lower);
+        free_command_args(args, argc);
+        free(resp_buffer);
+        return error_msg;
+    }
+}
+    // Call handler
     char *response = cmd->handler(server, args, argc, client);
 
     free_command_args(args, argc);
