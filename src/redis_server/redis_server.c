@@ -491,33 +491,30 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
         }
         else if (strstr(buffer, "+FULLRESYNC")) {
             server->replication_info->handshake_step = 4; // Mark handshake complete
-            printf("Handshake complete! Waiting for RDB...\n");
+            printf("Handshake complete! Ready for RDB...\n");
         }
         return;
     }
 
-    // After handshake: handle RDB file and then commands
-    
-    // If we haven't started receiving RDB yet, look for the size marker
-    if (!server->replication_info->rdb_started) {
-        if (buffer[0] == '$') {
-            server->replication_info->expected_rdb_size = atol(buffer + 1);
-            server->replication_info->received_rdb_size = 0;
-            server->replication_info->rdb_started = 1;
-            printf("Starting RDB reception: expecting %ld bytes\n", server->replication_info->expected_rdb_size);
+    if (buffer[0] == '$') {
+        server->replication_info->expected_rdb_size = atol(buffer + 1);
+        server->replication_info->received_rdb_size = 0;
+        server->replication_info->rdb_started = 1;
+        server->replication_info->rdb_complete = 0;
+        
+        printf("Starting RDB reception: expecting %ld bytes\n", server->replication_info->expected_rdb_size);
+        
+        // Find where RDB data starts in this buffer
+        char *rdb_start = strstr(buffer, "\r\n");
+        if (rdb_start) {
+            rdb_start += 2; // Skip \r\n
+            ssize_t rdb_data_in_buffer = bytes_read - (rdb_start - buffer);
             
-            // Check if RDB data starts in the same buffer
-            char *rdb_start = strstr(buffer, "\r\n");
-            if (rdb_start) {
-                rdb_start += 2; // Skip \r\n
-                ssize_t rdb_data_in_buffer = bytes_read - (rdb_start - buffer);
-                
-                if (rdb_data_in_buffer > 0) {
-                    process_rdb_data(server, rdb_start, rdb_data_in_buffer);
-                }
+            if (rdb_data_in_buffer > 0) {
+                process_rdb_data(server, rdb_start, rdb_data_in_buffer);
             }
-            return;
         }
+        return;
     }
     
     // If we're currently receiving RDB data
@@ -528,6 +525,12 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
     
     // RDB is complete - process replication commands
     if (server->replication_info->rdb_complete) {
+        printf("Processing command after RDB completion\n");
+        handle_replication_command(server, fd, buffer, bytes_read);
+    }
+    else {
+        // This might be a command that came before RDB was fully processed
+        printf("Received command but RDB not complete yet, processing anyway\n");
         handle_replication_command(server, fd, buffer, bytes_read);
     }
 }
