@@ -36,6 +36,7 @@ static void handle_master_replconf_getack(redis_server_t *server, int master_fd,
 static void handle_replication_command(redis_server_t *server, int fd, const char *buffer, ssize_t bytes_read);
 static void process_multiple_replication_commands(redis_server_t *server, const char *buffer, ssize_t buffer_len);
 static void process_rdb_data(redis_server_t *server, const char *data, ssize_t data_len);
+static void handle_rdb_buffer(redis_server_t *server, const char *buffer, ssize_t bytes_read);
 redis_server_t* redis_server_create(int port)
 {
     redis_server_t *redis = calloc(1, sizeof(redis_server_t));
