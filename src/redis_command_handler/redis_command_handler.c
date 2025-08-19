@@ -225,7 +225,6 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
                     "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n", 
                     args[0]);
             
-            free(cmd_lower);
             free_command_args(args, argc);
             free(resp_buffer);
             return strdup(response);
