@@ -677,6 +677,7 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
     }
     
     if (server->replication_info->role == SLAVE) {
+        // Use strlen for now, but in a real implementation you'd want to track actual bytes
         size_t bytes = strlen(command_buffer);
         server->replication_info->replica_offset += bytes;
         printf("Replica offset updated: +%zu = %lu total bytes\n", 
@@ -686,6 +687,9 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
 
 static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read)
 {
+    printf("Processing REPLCONF GETACK command\n");
+    
+    // Track the bytes for this GETACK command
     track_replica_bytes(server, buffer);
     
     char offset_str[32];
@@ -699,8 +703,14 @@ static void handle_master_replconf_getack(redis_server_t *server, int master_fd,
             "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
             offset_digits, offset_str);
     
-    printf("Sending ACK with offset: %lu\n", server->replication_info->replica_offset);
+    printf("Sending ACK response: %s", response);
+    printf("ACK with offset: %lu\n", server->replication_info->replica_offset);
     
     // Send response back to master
-    send(master_fd, response, strlen(response), MSG_NOSIGNAL);
+    ssize_t sent = send(master_fd, response, strlen(response), MSG_NOSIGNAL);
+    if (sent < 0) {
+        perror("Failed to send ACK");
+    } else {
+        printf("Successfully sent %zd bytes ACK response\n", sent);
+    }
 }
