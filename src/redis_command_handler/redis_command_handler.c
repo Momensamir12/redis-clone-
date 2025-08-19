@@ -1969,5 +1969,6 @@ char *handle_subscribe_command(redis_server_t *server, char **args, int argc, vo
     c->subscribed_channels++;
     list_rpush(list, c->fd);
     }
-    char *response = sprintf("*3\r\n$%d\r\n$%d\r\n:%d\r\n",sizeof("subscribe"), sizeof(char[1]), c->subscribed_channels);
+    char response[256];
+    snprintf(response,sizeof(response),"*3\r\n$%d\r\n$%d\r\n:%d\r\n",sizeof("subscribe"), sizeof(char[1]), c->subscribed_channels);
 }
