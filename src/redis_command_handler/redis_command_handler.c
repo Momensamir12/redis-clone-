@@ -50,8 +50,9 @@ static redis_command_t commands[] = {
     {"exec", handle_exec_command, 1, 1},
     {"discard", handle_discard_command, 1, 1},
     {"info", handle_info_command, 2, -1},
-    {"replconf", handle_repliconf_command, 3, -1},
+    {"replconf", handle_replconf_command, 2, -1},
     {"psync", handle_psync_command, 3, -1},
+    {"wait", handle_wait_command, 3, 3},
     {NULL, NULL, 0, 0} // Sentinel
 };
 
@@ -1489,16 +1490,69 @@ char *handle_info_command(redis_server_t *server, char **args, int argc, void *c
     return encode_bulk_string(info_buffer);
 }
 
-char *handle_repliconf_command(redis_server_t *server, char **args, int argc, void *client)
+char *handle_replconf_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if(server->replication_info->role != MASTER)
-      return NULL;
-    if (argc >= 3 && strcasecmp(args[1], "listening-port") == 0) {
-        client_t *c = (client_t *)client;
-        add_replica(server, c->fd);
+    if (argc < 3) {
+        return strdup("-ERR wrong number of arguments for 'replconf' command\r\n");
     }
     
-    return encode_simple_string(strdup("OK"));
+    // Handle REPLCONF GETACK (sent by master to replica)
+    if (strcasecmp(args[1], "getack") == 0) {
+        if (server->replication_info->role != SLAVE) {
+            return strdup("-ERR GETACK can only be sent to replicas\r\n");
+        }
+        
+        // Build response: *3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$<digits>\r\n<offset>\r\n
+        char offset_str[32];
+        snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
+        int offset_digits = count_digits(server->replication_info->replica_offset);
+        
+        char response[256];
+        snprintf(response, sizeof(response), 
+                "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
+                offset_digits, offset_str);
+        
+        printf("Sending ACK with offset: %lu\n", server->replication_info->replica_offset);
+        return strdup(response);
+    }
+    
+    // Handle REPLCONF ACK (sent by replica to master)
+    else if (strcasecmp(args[1], "ack") == 0) {
+        if (server->replication_info->role != MASTER) {
+            return strdup("-ERR ACK can only be sent to masters\r\n");
+        }
+        
+        if (argc < 3) {
+            return strdup("-ERR wrong number of arguments for 'replconf ack' command\r\n");
+        }
+        
+        client_t *c = (client_t *)client;
+        uint64_t ack_offset = strtoull(args[2], NULL, 10);
+        
+        // Find which replica this is and update its ACK offset
+        for (int i = 0; i < MAX_REPLICAS; i++) {
+            if (server->replication_info->replicas_fd[i] == c->fd) {
+                server->replication_info->replica_ack_offsets[i] = ack_offset;
+                printf("Updated replica %d (fd=%d) ACK offset to %lu\n", 
+                       i, c->fd, ack_offset);
+                break;
+            }
+        }
+        
+        return NULL;
+    }
+    
+    else if (strcasecmp(args[1], "listening-port") == 0) {
+        if (server->replication_info->role != MASTER) {
+            return NULL;
+        }
+        
+        client_t *c = (client_t *)client;
+        add_replica(server, c->fd);
+        return encode_simple_string("OK");
+    }
+    
+    return strdup("-ERR unknown REPLCONF option\r\n");
 }
 
 char *handle_psync_command(redis_server_t *server, char **args, int argc, void *client)
@@ -1543,6 +1597,79 @@ char *handle_psync_command(redis_server_t *server, char **args, int argc, void *
     }
     
     return encode_simple_string("ERR Invalid PSYNC arguments");
+}
+
+char *handle_wait_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    if (argc != 3) {
+        return strdup("-ERR wrong number of arguments for 'wait' command\r\n");
+    }
+    
+    if (server->replication_info->role != MASTER) {
+        return strdup("-ERR WAIT can only be used on masters\r\n");
+    }
+    
+    int expected_replicas = atoi(args[1]);
+    int timeout_ms = atoi(args[2]);
+    
+    printf("WAIT command: expecting %d replicas, timeout %d ms\n", expected_replicas, timeout_ms);
+    
+    // If no replicas connected, return 0 immediately
+    if (server->replication_info->connected_slaves == 0) {
+        return strdup(":0\r\n");
+    }
+    
+    // Send GETACK to all connected replicas
+    uint64_t current_offset = server->replication_info->master_repl_offset;
+    char getack_cmd[] = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
+    
+    for (int i = 0; i < MAX_REPLICAS; i++) {
+        if (server->replication_info->replicas_fd[i] != -1) {
+            send(server->replication_info->replicas_fd[i], getack_cmd, strlen(getack_cmd), MSG_NOSIGNAL);
+            printf("Sent GETACK to replica fd=%zu\n", server->replication_info->replicas_fd[i]);
+        }
+    }
+    
+    // Wait for responses or timeout
+    long long start_time = get_current_time_ms();
+    long long end_time = start_time + timeout_ms;
+    
+    while (get_current_time_ms() < end_time) {
+        // Count how many replicas have acknowledged up to current_offset
+        int acked_replicas = 0;
+        
+        for (int i = 0; i < MAX_REPLICAS; i++) {
+            if (server->replication_info->replicas_fd[i] != -1 && 
+                server->replication_info->replica_ack_offsets[i] >= current_offset) {
+                acked_replicas++;
+            }
+        }
+        
+        printf("WAIT: %d/%d replicas have acked offset %lu\n", 
+               acked_replicas, expected_replicas, current_offset);
+        
+        if (acked_replicas >= expected_replicas) {
+            char response[32];
+            sprintf(response, ":%d\r\n", acked_replicas);
+            return strdup(response);
+        }
+        
+        usleep(1000); 
+    }
+    
+    int final_acked = 0;
+    for (int i = 0; i < MAX_REPLICAS; i++) {
+        if (server->replication_info->replicas_fd[i] != -1 && 
+            server->replication_info->replica_ack_offsets[i] >= current_offset) {
+            final_acked++;
+        }
+    }
+    
+    printf("WAIT timeout: returning %d acked replicas\n", final_acked);
+    
+    char response[32];
+    sprintf(response, ":%d\r\n", final_acked);
+    return strdup(response);
 }
 
 static int create_rdb_snapshot(redis_db_t *db)

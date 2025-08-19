@@ -3,6 +3,7 @@
 #include <string.h>
 #include "../redis_db/redis_db.h"
 #include <sys/time.h>
+#include <stdint.h>
 
 
 long long get_current_time_ms() {
@@ -20,4 +21,13 @@ void set_expiry_ms(redis_object_t *obj, int milliseconds) {
 int is_expired(redis_object_t *obj) {
     if (obj->expiry == 0) return 0;  // No expiry
     return get_current_time_ms() > obj->expiry;
+}
+int count_digits(uint64_t num) {
+    if (num == 0) return 1;
+    int count = 0;
+    while (num > 0) {
+        count++;
+        num /= 10;
+    }
+    return count;
 }

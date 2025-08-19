@@ -32,9 +32,10 @@ int save_stream_entries(io_buffer *rdb, redis_stream_t *stream);
 redis_stream_t *load_stream(RDBLoader *loader);
 int load_stream_entry(RDBLoader *loader, redis_stream_t *stream);
 int load_stream_entry_full(RDBLoader *loader, redis_db_t *db);
-void rdb_load_full(const char *path, redis_db_t *db);
+int rdb_load_full(const char *path, redis_db_t *db);
 int load_string_entry(RDBLoader *loader, redis_db_t *db);
 int load_list_entry(RDBLoader *loader, redis_db_t *db);
+int rdb_save_database_background(io_buffer *rdb, redis_db_t *db);
 
 
 #endif

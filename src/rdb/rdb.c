@@ -297,7 +297,7 @@ size_t encode_int(io_buffer *rdb, int64_t val)
 }
 
 
-void rdb_load_full(const char *path, redis_db_t *db)
+int rdb_load_full(const char *path, redis_db_t *db)
 {
     if (!db) {
         fprintf(stderr, "Database parameter is NULL\n");
@@ -386,6 +386,8 @@ void rdb_load_full(const char *path, redis_db_t *db)
     
     printf("Successfully loaded RDB file. Database now contains %zu keys.\n", db->dict->count);
     close(loader.fd);
+
+    return 1;
 }
 
 // Helper function to load string entries
@@ -757,4 +759,22 @@ int load_stream_entry(RDBLoader *loader, redis_stream_t *stream)
     free(entry_id);
     
     return entry ? 0 : -1;
+}
+int rdb_save_database_background(io_buffer *rdb, redis_db_t *db)
+{
+    pid_t pid = fork();
+    
+    if (pid == 0) {
+        printf("RDB background saving started\n");
+        rdb_save_database(rdb, db);
+        exit(0);
+    }
+    else if (pid > 0) {
+        printf("Started background RDB save with PID: %d\n", pid);
+        return pid;  
+    }
+    else {
+        perror("fork failed");
+        return -1;   
+    }
 }

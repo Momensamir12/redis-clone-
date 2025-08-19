@@ -14,19 +14,26 @@ typedef enum {
 } role_t;
 
 typedef struct replication_info{
-  role_t role;
-  u_int16_t connected_slaves;
-  int master_port;
-  char *master_host;
-  char replication_id[41];
-  uint64_t master_repl_offset;
-  u_int16_t master_fd;
-  uint16_t handshake_step;
-  size_t replicas_fd [MAX_REPLICAS];
- 
-  
+    role_t role;
+    u_int16_t connected_slaves;
+    int master_port;
+    char *master_host;
+    char replication_id[41];
+    uint64_t master_repl_offset;
+    u_int16_t master_fd;
+    uint16_t handshake_step;
+    size_t replicas_fd[MAX_REPLICAS];
 
+    uint64_t replica_offset;                   
+    uint64_t replica_ack_offsets[MAX_REPLICAS]; 
+
+    int receiving_rdb;
+    long expected_rdb_size;
+    long received_rdb_size;
+    int rdb_fd;
+    char rdb_temp_path[256];
 } replication_info_t;
+
 typedef struct redis_server {
     server_t *server;
     event_loop_t *event_loop;
