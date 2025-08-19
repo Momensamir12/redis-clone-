@@ -139,7 +139,17 @@ void redis_server_destroy(redis_server_t *redis) {
     {
       free(redis->replication_info->master_host);
       free(redis->replication_info);
-    }  
+    }
+
+    if(redis->rdb_dir)
+    {
+        free(redis->rdb_dir);
+        free(redis->rdb_filename);
+    }
+    if(redis->channels_map)
+    {
+        free(redis->channels_map);
+    }
 
     free(redis);
 }
@@ -152,6 +162,7 @@ void redis_server_run(redis_server_t *redis) {
     snprintf(rdb_path, sizeof(rdb_path), "%s/%s", redis->rdb_dir, redis->rdb_filename);
     rdb_load_full(rdb_path, redis->db);
     }
+    init_channel_data(redis);
     event_loop_run(redis->event_loop);
 }
 
@@ -185,10 +196,8 @@ static void handle_server_accept(event_loop_t *event_loop, int fd, uint32_t even
         return;
     }
     
-    // Add to server's client list (not the global one)
     add_client_to_list(redis->clients, client);
     
-    // Add client to event loop - pass client as data
     if (event_loop_add_fd(event_loop, client_fd, EPOLLIN | EPOLLET, 
                           handle_client_data, client) < 0) {
         perror("event_loop_add_fd");
@@ -878,6 +887,11 @@ static void complete_wait_command(redis_server_t *server, int acked_count) {
     // Clear wait state
     server->pending_wait.active = 0;
     server->pending_wait.client = NULL;
+}
+
+void init_channel_data(redis_server_t *server)
+{
+    hash_table_create(server->channels_map);
 }
 
 

@@ -15,7 +15,8 @@ client_t *create_client(int fd)
     client->block_timeout = 0;
     client->is_blocked = 0;
     client->blocked_key = NULL;
-    
+    client->subscribed_channels = 0;
+    client->sub_mode = 0;
     return client;
 }
 

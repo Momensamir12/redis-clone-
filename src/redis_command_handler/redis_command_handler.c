@@ -58,6 +58,7 @@ static redis_command_t commands[] = {
     {"wait", handle_wait_command, 3, 3},
     {"config",handle_config_get_command, 2 , -1},
     {"keys", handle_keys_command, 2, 2},
+    {"subscribe", handle_subscribe_command, 2, 2},
 
     {NULL, NULL, 0, 0} // Sentinel
 };
@@ -1941,4 +1942,32 @@ char *handle_keys_command(redis_server_t *server, char **args, int argc, void *c
     hash_table_iterator_destroy(iter);
     
     return response;
+}
+char *handle_subscribe_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    redis_object_t *list_obj = hash_table_get(server->channels_map, args[1]);
+    if(list_obj == NULL)
+    {
+      list_obj = redis_object_create_list();
+    }
+    redis_list_t *list = list_obj->ptr;
+    client_t *c = (client_t *)(client);
+    list_node_t * node = list->head;
+    int subscribed = 0;
+    while(node)
+    {
+      client_t *cur = (client_t *)node->data;
+      if(cur == c)
+      {
+        subscribed = 1;
+        break;
+      }
+      node = node->next;
+    }
+    if(!subscribed){
+    c->sub_mode = 1;
+    c->subscribed_channels++;
+    list_rpush(list, c->fd);
+    }
+    char *response = sprintf("*3\r\n$%d\r\n$%d\r\n:%d\r\n",sizeof("subscribe"), sizeof(char[1]), c->subscribed_channels);
 }

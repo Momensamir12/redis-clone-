@@ -19,6 +19,9 @@ typedef struct client {
     int xread_num_streams; 
     int is_queued; /* is the client queueing commands using multi*/
     redis_list_t *transaction_commands;
+    char **channels;
+    int subscribed_channels;
+    int sub_mode;
 }client_t;
 
 typedef struct transaction_command {

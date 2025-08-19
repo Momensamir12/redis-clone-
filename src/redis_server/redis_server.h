@@ -55,7 +55,10 @@ typedef struct redis_server {
     replication_info_t *replication_info;
     wait_state_t pending_wait;
     char *rdb_dir;        // Directory for RDB files
-    char *rdb_filename; 
+    char *rdb_filename;
+    hash_table_t *channels_map;
+    int n_channels;
+
 
 } redis_server_t;
 
