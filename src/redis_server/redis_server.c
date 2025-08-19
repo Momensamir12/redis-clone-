@@ -680,33 +680,7 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
 
 static void handle_replication_command(redis_server_t *server, int fd, const char *buffer, ssize_t bytes_read)
 {
-    printf("Processing replication command: %.*s\n", (int)bytes_read, buffer);
-    
-    // Check if this is a REPLCONF GETACK command
-    if (strstr(buffer, "REPLCONF") && strstr(buffer, "GETACK")) {
-        printf("Received REPLCONF GETACK command\n");
-        
-        // Send ACK response with current offset
-        char offset_str[32];
-        snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
-        int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
-        
-        char response[256];
-        snprintf(response, sizeof(response), 
-                "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
-                offset_digits, offset_str);
-        
-        printf("Sending ACK response: %s", response);
-        
-        ssize_t sent = send(fd, response, strlen(response), MSG_NOSIGNAL);
-        if (sent < 0) {
-            perror("Failed to send ACK");
-        } else {
-            printf("Successfully sent ACK response\n");
-        }
-        return;
-    }
-    
+    printf("Processing replication command: %.*s\n", (int)bytes_read, buffer); 
     process_multiple_replication_commands(server, buffer, bytes_read);
 }
 
@@ -743,20 +717,42 @@ static void process_multiple_replication_commands(redis_server_t *server, const 
         
         printf("Executing single command: %s", single_cmd);
         
-        // Process this individual command
-        char *response = handle_command(server, single_cmd, NULL);
-        if (response) {
-            free(response); // Don't send responses back to master for replication commands
+        // Check if this is a GETACK command BEFORE updating offset
+        int is_getack = (strstr(single_cmd, "REPLCONF") && strstr(single_cmd, "GETACK"));
+        
+        // For GETACK, respond with CURRENT offset (before processing this command)
+        if (is_getack) {
+            printf("Received REPLCONF GETACK command\n");
+            
+            // Send ACK response with current offset (before processing this GETACK)
+            char offset_str[32];
+            snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
+            int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
+            
+            char response[256];
+            snprintf(response, sizeof(response), 
+                    "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
+                    offset_digits, offset_str);
+            
+            printf("Sending ACK response: %s", response);
+            
+            ssize_t sent = send(server->replication_info->master_fd, response, strlen(response), MSG_NOSIGNAL);
+            if (sent < 0) {
+                perror("Failed to send ACK");
+            } else {
+                printf("Successfully sent ACK response\n");
+            }
+        } else {
+            // Process non-GETACK commands normally
+            char *response = handle_command(server, single_cmd, NULL);
+            if (response) {
+                free(response); // Don't send responses back to master for replication commands
+            }
         }
         
-        // Track bytes for ALL commands in replication (not just write commands)
-        // Skip only REPLCONF GETACK commands since they're queries from master
-        if (!(strstr(single_cmd, "REPLCONF") && strstr(single_cmd, "GETACK"))) {
-            server->replication_info->replica_offset += cmd_len;
-            printf("Updated replica offset: +%zu = %lu\n", cmd_len, server->replication_info->replica_offset);
-        } else {
-            printf("Skipping offset update for REPLCONF GETACK command\n");
-        }
+        // Update offset for ALL commands (including REPLCONF GETACK)
+        server->replication_info->replica_offset += cmd_len;
+        printf("Updated replica offset: +%zu = %lu\n", cmd_len, server->replication_info->replica_offset);
         
         free(single_cmd);
         current = next_command;
