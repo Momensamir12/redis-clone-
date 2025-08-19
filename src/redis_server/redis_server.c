@@ -36,6 +36,8 @@ static void handle_replication_command(redis_server_t *server, int fd, const cha
 static void process_multiple_replication_commands(redis_server_t *server, const char *buffer, ssize_t buffer_len);
 static void process_rdb_data(redis_server_t *server, const char *data, ssize_t data_len);
 static void handle_rdb_buffer(redis_server_t *server, const char *buffer, ssize_t bytes_read);
+static int count_acked_replicas(redis_server_t *server, uint64_t target_offset);
+static void complete_wait_command(redis_server_t *server, int acked_count);
 redis_server_t* redis_server_create(int port)
 {
     redis_server_t *redis = calloc(1, sizeof(redis_server_t));
@@ -315,6 +317,9 @@ static void handle_timer_interrupt(event_loop_t *loop, int fd, uint32_t events, 
     
     // Check blocked clients for timeout
     check_blocked_clients_timeout(redis);
+    
+    // Check pending WAIT command
+    check_wait_completion(redis);
 }
 
 int redis_server_configure_master(redis_server_t *server)
@@ -814,4 +819,57 @@ static void handle_rdb_buffer(redis_server_t *server, const char *buffer, ssize_
         // Continue receiving RDB data
         process_rdb_data(server, buffer, bytes_read);
     }
+}
+
+ void check_wait_completion(redis_server_t *server) {
+    if (!server->pending_wait.active) {
+        return;
+    }
+    
+    wait_state_t *wait = &server->pending_wait;
+    long long current_time = get_current_time_ms();
+    
+    // Check if timeout expired
+    if (current_time >= wait->start_time + wait->timeout_ms) {
+        // Timeout - count current acks and respond
+        int acked_count = count_acked_replicas(server, wait->target_offset);
+        complete_wait_command(server, acked_count);
+        return;
+    }
+    
+    // Check if enough replicas have acked
+    int acked_count = count_acked_replicas(server, wait->target_offset);
+    if (acked_count >= wait->expected_replicas) {
+        complete_wait_command(server, acked_count);
+    }
+}
+
+static int count_acked_replicas(redis_server_t *server, uint64_t target_offset) {
+    int count = 0;
+    for (int i = 0; i < MAX_REPLICAS; i++) {
+        if (server->replication_info->replicas_fd[i] != -1 && 
+            server->replication_info->replica_ack_offsets[i] >= target_offset) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void complete_wait_command(redis_server_t *server, int acked_count) {
+    if (!server->pending_wait.active) {
+        return;
+    }
+    
+    // Send response to waiting client
+    char response[32];
+    sprintf(response, ":%d\r\n", acked_count);
+    
+    client_t *client = server->pending_wait.client;
+    send(client->fd, response, strlen(response), MSG_NOSIGNAL);
+    
+    printf("WAIT completed: %d replicas acked\n", acked_count);
+    
+    // Clear wait state
+    server->pending_wait.active = 0;
+    server->pending_wait.client = NULL;
 }

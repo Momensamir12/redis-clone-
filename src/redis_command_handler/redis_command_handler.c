@@ -1530,8 +1530,10 @@ char *handle_replconf_command(redis_server_t *server, char **args, int argc, voi
                     server->replication_info->replica_ack_offsets[i] = ack_offset;
                     printf("Updated replica %d (fd=%d) ACK offset to %lu\n", 
                            i, c->fd, ack_offset);
+                    check_wait_completion(server);       
                     break;
                 }
+                
             }
             
             return NULL; // No response needed
@@ -1626,57 +1628,49 @@ char *handle_wait_command(redis_server_t *server, char **args, int argc, void *c
         return strdup(":0\r\n");
     }
     
-    // Send GETACK to all connected replicas
     uint64_t current_offset = server->replication_info->master_repl_offset;
-    char getack_cmd[] = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
     
-    for (int i = 0; i < MAX_REPLICAS; i++) {
-        if (server->replication_info->replicas_fd[i] != -1) {
-            send(server->replication_info->replicas_fd[i], getack_cmd, strlen(getack_cmd), MSG_NOSIGNAL);
-            printf("Sent GETACK to replica fd=%zu\n", server->replication_info->replicas_fd[i]);
-        }
+    // If offset is 0, all replicas are already synced
+    if (current_offset == 0) {
+        int synced_replicas = server->replication_info->connected_slaves;
+        char response[32];
+        sprintf(response, ":%d\r\n", synced_replicas);
+        return strdup(response);
     }
     
-    // Wait for responses or timeout
-    long long start_time = get_current_time_ms();
-    long long end_time = start_time + timeout_ms;
-    
-    while (get_current_time_ms() < end_time) {
-        // Count how many replicas have acknowledged up to current_offset
-        int acked_replicas = 0;
-        
-        for (int i = 0; i < MAX_REPLICAS; i++) {
-            if (server->replication_info->replicas_fd[i] != -1 && 
-                server->replication_info->replica_ack_offsets[i] >= current_offset) {
-                acked_replicas++;
-            }
-        }
-        
-        printf("WAIT: %d/%d replicas have acked offset %lu\n", 
-               acked_replicas, expected_replicas, current_offset);
-        
-        if (acked_replicas >= expected_replicas) {
-            char response[32];
-            sprintf(response, ":%d\r\n", acked_replicas);
-            return strdup(response);
-        }
-        
-        usleep(1000); 
-    }
-    
-    int final_acked = 0;
+    // Check if enough replicas are already synced
+    int already_acked = 0;
     for (int i = 0; i < MAX_REPLICAS; i++) {
         if (server->replication_info->replicas_fd[i] != -1 && 
             server->replication_info->replica_ack_offsets[i] >= current_offset) {
-            final_acked++;
+            already_acked++;
         }
     }
     
-    printf("WAIT timeout: returning %d acked replicas\n", final_acked);
+    if (already_acked >= expected_replicas) {
+        char response[32];
+        sprintf(response, ":%d\r\n", already_acked);
+        return strdup(response);
+    }
     
-    char response[32];
-    sprintf(response, ":%d\r\n", final_acked);
-    return strdup(response);
+    // Set up non-blocking wait
+    server->pending_wait.client = (client_t *)client;
+    server->pending_wait.expected_replicas = expected_replicas;
+    server->pending_wait.target_offset = current_offset;
+    server->pending_wait.start_time = get_current_time_ms();
+    server->pending_wait.timeout_ms = timeout_ms;
+    server->pending_wait.active = 1;
+    
+    // Send GETACK to all replicas
+    char getack_cmd[] = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
+    for (int i = 0; i < MAX_REPLICAS; i++) {
+        if (server->replication_info->replicas_fd[i] != -1) {
+            send(server->replication_info->replicas_fd[i], getack_cmd, strlen(getack_cmd), MSG_NOSIGNAL);
+            printf("Sent GETACK to replica fd=%d\n", server->replication_info->replicas_fd[i]);
+        }
+    }
+    
+    return NULL;
 }
 
 static int create_rdb_snapshot(redis_db_t *db)
