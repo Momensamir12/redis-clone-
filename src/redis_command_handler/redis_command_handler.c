@@ -1591,7 +1591,6 @@ char *handle_psync_command(redis_server_t *server, char **args, int argc, void *
         write(client_fd, response, strlen(response));
         free(response);
         
-        // Send the actual RDB file, not an empty one
         if (send_rdb_file_to_client(client_fd, TEMP_RDB_FILE) == -1) {
             unlink(TEMP_RDB_FILE);
             return NULL; 
