@@ -388,7 +388,14 @@ char *handle_echo_command(redis_server_t *server, char **args, int argc, void *c
 char *handle_ping_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)server;
-    (void)client;
+    client_t *c = (client_t *)client;
+    if(c->sub_mode)
+    {
+        char ** args = malloc(2 * sizeof(char *));
+        args[0] = strdup("pong");
+        args[1] = strdup("");
+        return encode_resp_array(args, 2);
+    }
     if (argc == 2)
     {
         return encode_bulk_string(args[1]);
