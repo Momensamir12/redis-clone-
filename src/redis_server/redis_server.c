@@ -492,47 +492,30 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
         else if (strstr(buffer, "+FULLRESYNC")) {
             server->replication_info->handshake_step = 4; // Mark handshake complete
             printf("Handshake complete! Ready for RDB...\n");
-        }
-        return;
-    }
-
-    if (buffer[0] == '$') {
-        server->replication_info->expected_rdb_size = atol(buffer + 1);
-        server->replication_info->received_rdb_size = 0;
-        server->replication_info->rdb_started = 1;
-        server->replication_info->rdb_complete = 0;
-        
-        printf("Starting RDB reception: expecting %ld bytes\n", server->replication_info->expected_rdb_size);
-        
-        // Find where RDB data starts in this buffer
-        char *rdb_start = strstr(buffer, "\r\n");
-        if (rdb_start) {
-            rdb_start += 2; // Skip \r\n
-            ssize_t rdb_data_in_buffer = bytes_read - (rdb_start - buffer);
             
-            if (rdb_data_in_buffer > 0) {
-                process_rdb_data(server, rdb_start, rdb_data_in_buffer);
+            // Check if RDB data starts in the same buffer after FULLRESYNC
+            char *rdb_start = strstr(buffer, "$");
+            if (rdb_start) {
+                printf("Found RDB data in same buffer as FULLRESYNC\n");
+                // Process the RDB data that's in this buffer
+                ssize_t rdb_data_len = bytes_read - (rdb_start - buffer);
+                handle_rdb_buffer(server, rdb_start, rdb_data_len);
             }
         }
         return;
     }
+
+    // After handshake is complete (step >= 4)
     
-    // If we're currently receiving RDB data
-    if (server->replication_info->rdb_started && !server->replication_info->rdb_complete) {
-        process_rdb_data(server, buffer, bytes_read);
+    // Check if this buffer contains RDB size marker or is RDB data
+    if (buffer[0] == '$' || (server->replication_info->rdb_started && !server->replication_info->rdb_complete)) {
+        handle_rdb_buffer(server, buffer, bytes_read);
         return;
     }
     
     // RDB is complete - process replication commands
-    if (server->replication_info->rdb_complete) {
-        printf("Processing command after RDB completion\n");
-        handle_replication_command(server, fd, buffer, bytes_read);
-    }
-    else {
-        // This might be a command that came before RDB was fully processed
-        printf("Received command but RDB not complete yet, processing anyway\n");
-        handle_replication_command(server, fd, buffer, bytes_read);
-    }
+    printf("Processing replication command from master\n");
+    handle_replication_command(server, fd, buffer, bytes_read);
 }
 
 static void prepare_rdb_reception(redis_server_t *server)
@@ -695,35 +678,6 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
     }
 }
 
-static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read)
-{
-    printf("Processing REPLCONF GETACK command\n");
-    
-    // Track the bytes for this GETACK command
-    track_replica_bytes(server, buffer);
-    
-    char offset_str[32];
-    snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
-    
-    // Count digits in offset
-    int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
-    
-    char response[256];
-    snprintf(response, sizeof(response), 
-            "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
-            offset_digits, offset_str);
-    
-    printf("Sending ACK response: %s", response);
-    printf("ACK with offset: %lu\n", server->replication_info->replica_offset);
-    
-    // Send response back to master
-    ssize_t sent = send(master_fd, response, strlen(response), MSG_NOSIGNAL);
-    if (sent < 0) {
-        perror("Failed to send ACK");
-    } else {
-        printf("Successfully sent %zd bytes ACK response\n", sent);
-    }
-}
 static void handle_replication_command(redis_server_t *server, int fd, const char *buffer, ssize_t bytes_read)
 {
     printf("Processing replication command: %.*s\n", (int)bytes_read, buffer);
@@ -836,5 +790,36 @@ static void process_rdb_data(redis_server_t *server, const char *data, ssize_t d
             printf("Processing commands after RDB in same buffer\n");
             handle_replication_command(server, repl->master_fd, commands_start, commands_len);
         }
+    }
+}
+
+static void handle_rdb_buffer(redis_server_t *server, const char *buffer, ssize_t bytes_read)
+{
+    if (!server->replication_info->rdb_started) {
+        // This should start with RDB size marker
+        if (buffer[0] == '$') {
+            server->replication_info->expected_rdb_size = atol(buffer + 1);
+            server->replication_info->received_rdb_size = 0;
+            server->replication_info->rdb_started = 1;
+            server->replication_info->rdb_complete = 0;
+            
+            printf("Starting RDB reception: expecting %ld bytes\n", server->replication_info->expected_rdb_size);
+            
+            // Find where RDB data starts in this buffer
+            char *rdb_start = strstr(buffer, "\r\n");
+            if (rdb_start) {
+                rdb_start += 2; // Skip \r\n
+                ssize_t rdb_data_in_buffer = bytes_read - (rdb_start - buffer);
+                
+                if (rdb_data_in_buffer > 0) {
+                    process_rdb_data(server, rdb_start, rdb_data_in_buffer);
+                }
+            }
+        } else {
+            printf("Warning: Expected RDB size marker, got: %.*s\n", (int)bytes_read, buffer);
+        }
+    } else {
+        // Continue receiving RDB data
+        process_rdb_data(server, buffer, bytes_read);
     }
 }
