@@ -26,7 +26,8 @@ typedef struct replication_info{
     
     uint64_t replica_offset;                   
     uint64_t replica_ack_offsets[MAX_REPLICAS]; 
-    int rdb_received;
+    int rdb_started;
+    int rdb_complete;
     int receiving_rdb;
     long expected_rdb_size;
     long received_rdb_size;

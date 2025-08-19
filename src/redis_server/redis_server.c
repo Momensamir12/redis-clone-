@@ -35,6 +35,7 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer);
 static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read);
 static void handle_replication_command(redis_server_t *server, int fd, const char *buffer, ssize_t bytes_read);
 static void process_multiple_replication_commands(redis_server_t *server, const char *buffer, ssize_t buffer_len);
+static void process_rdb_data(redis_server_t *server, const char *data, ssize_t data_len);
 redis_server_t* redis_server_create(int port)
 {
     redis_server_t *redis = calloc(1, sizeof(redis_server_t));
@@ -374,7 +375,10 @@ int redis_server_configure_replica(redis_server_t *server, char* master_host, in
     info->expected_rdb_size = 0;
     info->received_rdb_size = 0;
     info->rdb_fd = -1;
-    
+    info->rdb_started = 0;
+    info->rdb_complete = 0;
+
+        
     server->replication_info = info;
     connect_to_master(server);
     
@@ -486,63 +490,46 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
             }
         }
         else if (strstr(buffer, "+FULLRESYNC")) {
-            server->replication_info->handshake_step++;
-            printf("Handshake complete! Ready for replication commands.\n");
+            server->replication_info->handshake_step = 4; // Mark handshake complete
+            printf("Handshake complete! Waiting for RDB...\n");
         }
         return;
     }
 
-    // After handshake is complete (step >= 4)
+    // After handshake: handle RDB file and then commands
     
-    // Handle RDB file reception
-    if (!server->replication_info->rdb_received) {
+    // If we haven't started receiving RDB yet, look for the size marker
+    if (!server->replication_info->rdb_started) {
         if (buffer[0] == '$') {
-            // Parse RDB size
             server->replication_info->expected_rdb_size = atol(buffer + 1);
-            printf("Expecting RDB file of %ld bytes\n", server->replication_info->expected_rdb_size);
+            server->replication_info->received_rdb_size = 0;
+            server->replication_info->rdb_started = 1;
+            printf("Starting RDB reception: expecting %ld bytes\n", server->replication_info->expected_rdb_size);
             
-            // Find where RDB data starts
+            // Check if RDB data starts in the same buffer
             char *rdb_start = strstr(buffer, "\r\n");
             if (rdb_start) {
                 rdb_start += 2; // Skip \r\n
-                ssize_t rdb_bytes = bytes_read - (rdb_start - buffer);
+                ssize_t rdb_data_in_buffer = bytes_read - (rdb_start - buffer);
                 
-                server->replication_info->received_rdb_size = rdb_bytes;
-                printf("Received %ld/%ld RDB bytes\n", 
-                       server->replication_info->received_rdb_size, 
-                       server->replication_info->expected_rdb_size);
-                
-                // Check if we've received all RDB data
-                if (server->replication_info->received_rdb_size >= server->replication_info->expected_rdb_size) {
-                    printf("RDB reception complete! Ready for commands.\n");
-                    server->replication_info->rdb_received = 1;
-                    
-                    // Check if there are commands after RDB in the same buffer
-                    ssize_t remaining_bytes = rdb_bytes - server->replication_info->expected_rdb_size;
-                    if (remaining_bytes > 0) {
-                        char *cmd_start = rdb_start + server->replication_info->expected_rdb_size;
-                        handle_replication_command(server, fd, cmd_start, remaining_bytes);
-                    }
+                if (rdb_data_in_buffer > 0) {
+                    process_rdb_data(server, rdb_start, rdb_data_in_buffer);
                 }
             }
+            return;
         }
-        else {
-            // Continue receiving RDB data
-            server->replication_info->received_rdb_size += bytes_read;
-            printf("Received %ld/%ld RDB bytes\n", 
-                   server->replication_info->received_rdb_size, 
-                   server->replication_info->expected_rdb_size);
-            
-            if (server->replication_info->received_rdb_size >= server->replication_info->expected_rdb_size) {
-                printf("RDB reception complete! Ready for commands.\n");
-                server->replication_info->rdb_received = 1;
-            }
-        }
+    }
+    
+    // If we're currently receiving RDB data
+    if (server->replication_info->rdb_started && !server->replication_info->rdb_complete) {
+        process_rdb_data(server, buffer, bytes_read);
         return;
     }
     
-    // Handle normal replication commands after RDB is complete
-    handle_replication_command(server, fd, buffer, bytes_read);
+    // RDB is complete - process replication commands
+    if (server->replication_info->rdb_complete) {
+        handle_replication_command(server, fd, buffer, bytes_read);
+    }
 }
 
 static void prepare_rdb_reception(redis_server_t *server)
@@ -816,5 +803,35 @@ static void process_multiple_replication_commands(redis_server_t *server, const 
         
         free(single_cmd);
         current = next_command;
+    }
+}
+
+static void process_rdb_data(redis_server_t *server, const char *data, ssize_t data_len)
+{
+    replication_info_t *repl = server->replication_info;
+    
+    // Calculate how much RDB data to consume from this buffer
+    ssize_t remaining_rdb = repl->expected_rdb_size - repl->received_rdb_size;
+    ssize_t rdb_bytes_to_consume = (data_len <= remaining_rdb) ? data_len : remaining_rdb;
+    
+    repl->received_rdb_size += rdb_bytes_to_consume;
+    
+    printf("RDB progress: %ld / %ld bytes (%.1f%%)\n", 
+           repl->received_rdb_size, repl->expected_rdb_size,
+           (double)repl->received_rdb_size / repl->expected_rdb_size * 100);
+    
+    // Check if RDB reception is complete
+    if (repl->received_rdb_size >= repl->expected_rdb_size) {
+        printf("RDB reception complete! Ready for commands.\n");
+        repl->rdb_complete = 1;
+        
+        // Process any remaining data in this buffer as commands
+        if (data_len > rdb_bytes_to_consume) {
+            const char *commands_start = data + rdb_bytes_to_consume;
+            ssize_t commands_len = data_len - rdb_bytes_to_consume;
+            
+            printf("Processing commands after RDB in same buffer\n");
+            handle_replication_command(server, repl->master_fd, commands_start, commands_len);
+        }
     }
 }
