@@ -219,6 +219,7 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         return strdup(response);
     }
     if (c && c->sub_mode) {
+        printf("HOW FEH EH \n");
         // Only allow specific commands in pub/sub mode
         if (strcmp(cmd_lower, "subscribe") != 0 && 
             strcmp(cmd_lower, "unsubscribe") != 0 &&
