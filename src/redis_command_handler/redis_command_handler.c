@@ -1943,33 +1943,56 @@ char *handle_keys_command(redis_server_t *server, char **args, int argc, void *c
     
     return response;
 }
+
 char *handle_subscribe_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    redis_object_t *list_obj = hash_table_get(server->channels_map, args[1]);
-    if(list_obj == NULL)
-    {
-      list_obj = redis_object_create_list();
+    if (!server || !args || argc < 2 || !client) {
+        return strdup("-ERR invalid arguments\r\n");
     }
+
+    char *channel_name = args[1];
+    client_t *c = (client_t *)client;
+    
+    // Get or create channel subscriber list
+    redis_object_t *list_obj = hash_table_get(server->channels_map, channel_name);
+    if (list_obj == NULL) {
+        list_obj = redis_object_create_list();
+        hash_table_set(server->channels_map, channel_name, list_obj);
+    }
+    
     redis_list_t *list = list_obj->ptr;
-    client_t *c = (client_t *)(client);
-    list_node_t * node = list->head;
-    int subscribed = 0;
-    while(node)
-    {
-      client_t *cur = (client_t *)node->data;
-      if(cur == c)
-      {
-        subscribed = 1;
-        break;
-      }
-      node = node->next;
+    
+    // Check if client is already subscribed
+    list_node_t *node = list->head;
+    int already_subscribed = 0;
+    while (node) {
+        client_t *cur = (client_t *)node->data;
+        if (cur == c) {
+            already_subscribed = 1;
+            break;
+        }
+        node = node->next;
     }
-    if(!subscribed){
-    c->sub_mode = 1;
-    c->subscribed_channels++;
-    list_rpush(list, c);
+    
+    // Add client if not already subscribed
+    if (!already_subscribed) {
+        c->sub_mode = 1;
+        c->subscribed_channels++;
+        list_rpush(list, c);
     }
-    char response[256];
-    snprintf(response,sizeof(response),"*3\r\n$%d\r\n$%d\r\n:%d\r\n",sizeof("subscribe"), sizeof(char[1]), c->subscribed_channels);
+    
+    // Build proper RESP response
+    // Format: *3\r\n$9\r\nsubscribe\r\n$<len>\r\n<channel>\r\n:<count>\r\n
+    int channel_len = strlen(channel_name);
+    int response_size = 64 + channel_len;  // Buffer for response
+    char *response = malloc(response_size);
+    if (!response) {
+        return strdup("-ERR out of memory\r\n");
+    }
+    
+    snprintf(response, response_size, 
+             "*3\r\n$9\r\nsubscribe\r\n$%d\r\n%s\r\n:%d\r\n",
+             channel_len, channel_name, c->subscribed_channels);
+    
     return response;
 }
