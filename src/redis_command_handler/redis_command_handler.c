@@ -400,13 +400,8 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
         response_args[0] = strdup("pong");
         response_args[1] = strdup(""); 
         
-        if (argc == 2) {
-            response_args[2] = strdup(args[1]);  
-        } else {
-            response_args[2] = strdup("");
-        }
         
-        char *result = encode_resp_array(response_args, 3);
+        char *result = encode_resp_array(response_args, 2);
         
         // Clean up
         free(response_args[0]);
