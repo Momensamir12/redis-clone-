@@ -721,7 +721,12 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
     }
     
     if (server->replication_info->role == SLAVE) {
-        // Use strlen for now, but in a real implementation you'd want to track actual bytes
+        // Only track bytes for actual write commands, not replication commands
+        if (strstr(command_buffer, "REPLCONF") || strstr(command_buffer, "PING")) {
+            printf("Skipping byte tracking for replication command\n");
+            return;
+        }
+        
         size_t bytes = strlen(command_buffer);
         server->replication_info->replica_offset += bytes;
         printf("Replica offset updated: +%zu = %lu total bytes\n", 
@@ -732,9 +737,6 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
 static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read)
 {
     printf("Processing REPLCONF GETACK command\n");
-    
-    // Track the bytes for this GETACK command
-    track_replica_bytes(server, buffer);
     
     char offset_str[32];
     snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
