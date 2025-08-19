@@ -406,6 +406,11 @@ int main(int argc, char *argv[])
             print_usage(argv[0]);
             return 0;
         }
+        else if(strcmp(argv[i], "--dir") == 0)
+        {
+            i+=3;
+            continue;
+        }
         else
         {
             fprintf(stderr, "Error: Unknown argument '%s'\n", argv[i]);

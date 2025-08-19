@@ -23,7 +23,7 @@
 #define NULL_RESP_VALUE "$-1\r\n"
 #define PSYNC_RESPONSE_SIZE 1024
 #define RDB_RESPONSE_SIZE 4096
-#define RDB_DEFAULT_DIR "/tmp"
+#define RDB_DEFAULT_DIR  "/tmp/redis-files"
 #define RDB_TEMP_FILE "temp.rdb"
 #define RDB_DEFAULT_FILE "dump.rdb"
 #define RESP_DEFAULT_ERROR "-ERR unknown error\r\n"
