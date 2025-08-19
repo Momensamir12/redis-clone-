@@ -391,8 +391,7 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
     client_t *c = (client_t *)client;
     
     if (c->sub_mode) {
-        // In pub/sub mode, PING returns: ["pong", "", message_or_empty]
-        char **response_args = malloc(3 * sizeof(char *));  // Don't shadow args!
+        char **response_args = malloc(2 * sizeof(char *));  
         if (!response_args) {
             return strdup("-ERR out of memory\r\n");
         }
@@ -406,7 +405,6 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
         // Clean up
         free(response_args[0]);
         free(response_args[1]);
-        free(response_args[2]);
         free(response_args);
         
         return result;
