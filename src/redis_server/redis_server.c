@@ -32,6 +32,7 @@ static int load_rdb_file(redis_server_t *server, const char *rdb_path);
 static void handle_rdb_data(redis_server_t *server, const char *data, ssize_t data_len);
 static void prepare_rdb_reception(redis_server_t *server);
 void track_replica_bytes(redis_server_t *server, const char *command_buffer);
+static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read);
 
 redis_server_t* redis_server_create(int port)
 {
@@ -503,11 +504,16 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
                 }
             }
         } else {
-            // Regular replication commands
+            if (strstr(buffer, "REPLCONF") && strstr(buffer, "GETACK")) {
+                // Handle REPLCONF GETACK specially
+                handle_master_replconf_getack(server, fd, buffer, bytes_read); 
+            }
+           else{     
             track_replica_bytes(server, buffer);
             process_multiple_commands(server, buffer, bytes_read);
             printf("Command executed on replica\n");
         }
+    }
     }
 }
 
@@ -527,7 +533,7 @@ static void prepare_rdb_reception(redis_server_t *server)
     }
     
     server->replication_info->received_rdb_size = 0;
-    server->replication_info->receiving_rdb = 0; // Will be set to 1 when we see $
+    server->replication_info->receiving_rdb = 0; 
 }
 
 static void handle_rdb_data(redis_server_t *server, const char *data, ssize_t data_len)
@@ -668,4 +674,25 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
         printf("Replica offset updated: +%zu = %lu total bytes\n", 
                bytes, server->replication_info->replica_offset);
     }
+}
+
+static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read)
+{
+    track_replica_bytes(server, buffer);
+    
+    char offset_str[32];
+    snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
+    
+    // Count digits in offset
+    int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
+    
+    char response[256];
+    snprintf(response, sizeof(response), 
+            "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
+            offset_digits, offset_str);
+    
+    printf("Sending ACK with offset: %lu\n", server->replication_info->replica_offset);
+    
+    // Send response back to master
+    send(master_fd, response, strlen(response), MSG_NOSIGNAL);
 }
