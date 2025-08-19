@@ -683,21 +683,31 @@ static void handle_replication_command(redis_server_t *server, int fd, const cha
 {
     printf("Processing replication command: %.*s\n", (int)bytes_read, buffer);
     
-    // Track bytes for ALL replication commands FIRST
-    if (server->replication_info && server->replication_info->role == SLAVE) {
-        server->replication_info->replica_offset += bytes_read;
-        printf("Updated replica offset: +%zd = %lu\n", bytes_read, server->replication_info->replica_offset);
-    }
-    
-    // Check if this is a REPLCONF GETACK command from replication stream
+    // Check if this is a REPLCONF GETACK command
     if (strstr(buffer, "REPLCONF") && strstr(buffer, "GETACK")) {
-        printf("Received REPLCONF GETACK through replication stream - bytes tracked, not responding\n");
-        // Don't respond to GETACK commands that come through replication stream
-        // These bytes are already tracked above
+        printf("Received REPLCONF GETACK command\n");
+        
+        // Send ACK response with current offset
+        char offset_str[32];
+        snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
+        int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
+        
+        char response[256];
+        snprintf(response, sizeof(response), 
+                "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
+                offset_digits, offset_str);
+        
+        printf("Sending ACK response: %s", response);
+        
+        ssize_t sent = send(fd, response, strlen(response), MSG_NOSIGNAL);
+        if (sent < 0) {
+            perror("Failed to send ACK");
+        } else {
+            printf("Successfully sent ACK response\n");
+        }
         return;
     }
     
-    // Handle multiple commands in the buffer (PING, SET, etc.)
     process_multiple_replication_commands(server, buffer, bytes_read);
 }
 
@@ -734,14 +744,19 @@ static void process_multiple_replication_commands(redis_server_t *server, const 
         
         printf("Executing single command: %s", single_cmd);
         
-        // Process this individual command (execute it)
+        // Process this individual command
         char *response = handle_command(server, single_cmd, NULL);
         if (response) {
             free(response); // Don't send responses back to master for replication commands
         }
         
-        // DON'T track bytes here - they were already tracked in handle_replication_command
-        printf("Command executed on replica\n");
+        // Track bytes only for write commands
+        if (is_write_command(single_cmd)) {
+            server->replication_info->replica_offset += cmd_len;
+            printf("Updated replica offset: +%zu = %lu\n", cmd_len, server->replication_info->replica_offset);
+        } else {
+            printf("Skipping offset update for non-write command\n");
+        }
         
         free(single_cmd);
         current = next_command;
