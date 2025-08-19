@@ -1553,7 +1553,7 @@ char *handle_replconf_command(redis_server_t *server, char **args, int argc, voi
     }
     else if (strcasecmp(args[1], "psync2"))
     {
-        return encode_simple_string("ok");
+        return encode_simple_string("OK");
     }
     
     return strdup("-ERR unknown REPLCONF option\r\n");
