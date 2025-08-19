@@ -34,6 +34,7 @@ static void prepare_rdb_reception(redis_server_t *server);
 void track_replica_bytes(redis_server_t *server, const char *command_buffer);
 static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read);
 static void handle_replication_command(redis_server_t *server, int fd, const char *buffer, ssize_t bytes_read);
+static void process_multiple_replication_commands(redis_server_t *server, const char *buffer, ssize_t buffer_len);
 redis_server_t* redis_server_create(int port)
 {
     redis_server_t *redis = calloc(1, sizeof(redis_server_t));
@@ -544,46 +545,6 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
     handle_replication_command(server, fd, buffer, bytes_read);
 }
 
-static void handle_replication_command(redis_server_t *server, int fd, const char *buffer, ssize_t bytes_read)
-{
-    printf("Processing replication command: %.*s\n", (int)bytes_read, buffer);
-    
-    // Check if this is a REPLCONF GETACK command
-    if (strstr(buffer, "REPLCONF") && strstr(buffer, "GETACK")) {
-        printf("Received REPLCONF GETACK command\n");
-        
-        // Send ACK response with current offset (should be 0 for this test)
-        char response[256];
-        snprintf(response, sizeof(response), 
-                "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$1\r\n0\r\n");
-        
-        printf("Sending ACK response: %s", response);
-        
-        ssize_t sent = send(fd, response, strlen(response), MSG_NOSIGNAL);
-        if (sent < 0) {
-            perror("Failed to send ACK");
-        } else {
-            printf("Successfully sent ACK response\n");
-        }
-    }
-    else {
-        // Handle other replication commands (SET, etc.)
-        // For now, just track the bytes
-        if (server->replication_info->role == SLAVE) {
-            // Only track write commands, not REPLCONF commands
-            if (!strstr(buffer, "REPLCONF") && !strstr(buffer, "PING")) {
-                server->replication_info->replica_offset += bytes_read;
-                printf("Updated replica offset to: %lu\n", server->replication_info->replica_offset);
-            }
-        }
-        
-        // Process the command
-        char *response = handle_command(server, (char*)buffer, NULL);
-        if (response) {
-            free(response);
-        }
-    }
-}
 static void prepare_rdb_reception(redis_server_t *server)
 {
     // Create temp file for RDB
@@ -771,5 +732,89 @@ static void handle_master_replconf_getack(redis_server_t *server, int master_fd,
         perror("Failed to send ACK");
     } else {
         printf("Successfully sent %zd bytes ACK response\n", sent);
+    }
+}
+static void handle_replication_command(redis_server_t *server, int fd, const char *buffer, ssize_t bytes_read)
+{
+    printf("Processing replication command: %.*s\n", (int)bytes_read, buffer);
+    
+    // Check if this is a REPLCONF GETACK command
+    if (strstr(buffer, "REPLCONF") && strstr(buffer, "GETACK")) {
+        printf("Received REPLCONF GETACK command\n");
+        
+        // Send ACK response with current offset
+        char offset_str[32];
+        snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
+        int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
+        
+        char response[256];
+        snprintf(response, sizeof(response), 
+                "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
+                offset_digits, offset_str);
+        
+        printf("Sending ACK response: %s", response);
+        
+        ssize_t sent = send(fd, response, strlen(response), MSG_NOSIGNAL);
+        if (sent < 0) {
+            perror("Failed to send ACK");
+        } else {
+            printf("Successfully sent ACK response\n");
+        }
+        return;
+    }
+    
+    // Handle multiple commands in the buffer
+    process_multiple_replication_commands(server, buffer, bytes_read);
+}
+
+static void process_multiple_replication_commands(redis_server_t *server, const char *buffer, ssize_t buffer_len)
+{
+    const char *current = buffer;
+    const char *buffer_end = buffer + buffer_len;
+    
+    while (current < buffer_end) {
+        // Find the start of the next command
+        while (current < buffer_end && *current != '*') {
+            current++;
+        }
+        
+        if (current >= buffer_end) break;
+        
+        // Find the end of this command by looking for the next '*' or end of buffer
+        const char *next_command = current + 1;
+        while (next_command < buffer_end && *next_command != '*') {
+            next_command++;
+        }
+        
+        size_t cmd_len = next_command - current;
+        
+        // Create a null-terminated string for this command
+        char *single_cmd = malloc(cmd_len + 1);
+        if (!single_cmd) {
+            printf("Failed to allocate memory for command\n");
+            break;
+        }
+        
+        memcpy(single_cmd, current, cmd_len);
+        single_cmd[cmd_len] = '\0';
+        
+        printf("Executing single command: %s", single_cmd);
+        
+        // Process this individual command
+        char *response = handle_command(server, single_cmd, NULL);
+        if (response) {
+            free(response); // Don't send responses back to master for replication commands
+        }
+        
+        // Track bytes only for write commands
+        if (is_write_command(single_cmd)) {
+            server->replication_info->replica_offset += cmd_len;
+            printf("Updated replica offset: +%zu = %lu\n", cmd_len, server->replication_info->replica_offset);
+        } else {
+            printf("Skipping offset update for non-write command\n");
+        }
+        
+        free(single_cmd);
+        current = next_command;
     }
 }
