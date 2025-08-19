@@ -1542,7 +1542,6 @@ char *handle_replconf_command(redis_server_t *server, char **args, int argc, voi
         return NULL;
     }
     
-    // Handle REPLCONF listening-port (sent by replica to master)
     else if (strcasecmp(args[1], "listening-port") == 0) {
         if (server->replication_info->role != MASTER) {
             return NULL;
@@ -1550,17 +1549,6 @@ char *handle_replconf_command(redis_server_t *server, char **args, int argc, voi
         
         client_t *c = (client_t *)client;
         add_replica(server, c->fd);
-        return encode_simple_string("OK");
-    }
-    
-    // Handle REPLCONF capa (sent by replica to master during handshake)
-    else if (strcasecmp(args[1], "capa") == 0) {
-        if (server->replication_info->role != MASTER) {
-            return strdup("-ERR CAPA can only be sent to masters\r\n");
-        }
-        
-        // For now, just acknowledge the capability - we don't need to store it
-        printf("Received replica capability: %s\n", argc > 2 ? args[2] : "unknown");
         return encode_simple_string("OK");
     }
     
