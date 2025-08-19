@@ -215,21 +215,29 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         free(resp_buffer);
         return strdup(response);
     }
-    if (c && c->sub_mode)
-    {
-        if (!is_pubsub_command(cmd_lower))
-        {
-            char response[256];
-            snprintf(response, sizeof(response),
-                     "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n",
-                     args[0]);
-
+// In the pub/sub mode check section:
+if (c && c->sub_mode) {
+    if (!is_pubsub_command(cmd_lower)) {
+        // Create error message
+        int error_len = strlen(args[0]) + 150;  // Extra space for error message
+        char *error_response = malloc(error_len);
+        if (!error_response) {
             free(cmd_lower);
             free_command_args(args, argc);
             free(resp_buffer);
-            return strdup(response);
+            return strdup("-ERR out of memory\r\n");
         }
+        
+        snprintf(error_response, error_len, 
+                "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n", 
+                args[0]);
+        
+        free(cmd_lower);
+        free_command_args(args, argc);
+        free(resp_buffer);
+        return error_response;
     }
+}
 
     // Call handler
     char *response = cmd->handler(server, args, argc, client);
