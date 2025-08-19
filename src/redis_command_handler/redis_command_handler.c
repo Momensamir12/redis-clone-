@@ -218,37 +218,20 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         free(resp_buffer);
         return strdup(response);
     }
-    if (c && c->sub_mode) {
-        printf("HOW FEH EH \n");
-        // Only allow specific commands in pub/sub mode
-        if (strcmp(cmd_lower, "subscribe") != 0 && 
-            strcmp(cmd_lower, "unsubscribe") != 0 &&
-            strcmp(cmd_lower, "psubscribe") != 0 &&
-            strcmp(cmd_lower, "punsubscribe") != 0 &&
-            strcmp(cmd_lower, "ping") != 0 &&
-            strcmp(cmd_lower, "quit") != 0 &&
-            strcmp(cmd_lower, "reset") != 0) {
-                    printf("HOW FEH EH 2\n");
-
+       if (c && c->sub_mode) {
+        if (!is_pubsub_command(cmd_lower)) {
             char response[256];
             snprintf(response, sizeof(response), 
                     "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n", 
                     args[0]);
-                                printf("HOW FEH EH 3\n");
-
+            
             free(cmd_lower);
-                                printf("HOW FEH EH 4\n");
-
             free_command_args(args, argc);
-                                printf("HOW FEH EH 5\n");
-
             free(resp_buffer);
-                                printf("HOW FEH EH 6\n");
-
             return strdup(response);
         }
     }
-    // Call handler
+    
     char *response = cmd->handler(server, args, argc, client);
 
     free_command_args(args, argc);
