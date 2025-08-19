@@ -486,7 +486,7 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
         server->replication_info->handshake_step++;
         printf("Handshake complete! Expecting RDB file...\n");
         
-        prepare_rdb_reception(server);
+        //prepare_rdb_reception(server);
     }
     else if (server->replication_info->handshake_step >= 4) {
         if (buffer[0] == '$') {
