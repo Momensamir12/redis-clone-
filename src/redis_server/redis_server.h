@@ -6,6 +6,7 @@
 #include "../redis_db/redis_db.h"
 #include "../lib/list.h"
 #include "../clients/client.h"
+
 #define MAX_REPLICAS 12
 
 typedef enum {
@@ -36,13 +37,14 @@ typedef struct replication_info{
 } replication_info_t;
 
 typedef struct {
-    client_t *client;         
-    int expected_replicas;      
-    uint64_t target_offset;     
-    long long start_time;       
-    int timeout_ms;             
-    int active;                 
+    client_t *client;           // Client waiting
+    int expected_replicas;      // Number of replicas needed
+    uint64_t target_offset;     // Offset replicas must reach
+    long long start_time;       // When WAIT started
+    int timeout_ms;             // Timeout in milliseconds
+    int active;                 // Is this wait active?
 } wait_state_t;
+
 
 typedef struct redis_server {
     server_t *server;
@@ -51,12 +53,9 @@ typedef struct redis_server {
     redis_list_t *clients;
     redis_list_t *blocked_clients;
     replication_info_t *replication_info;
-    wait_state_t pending_wait;  
-
+    wait_state_t pending_wait; 
 
 } redis_server_t;
-
-
 
 redis_server_t* redis_server_create(int port);
 void redis_server_destroy(redis_server_t *redis);
@@ -64,6 +63,5 @@ void redis_server_run(redis_server_t *redis);
 
 int redis_server_configure_master(redis_server_t *server);
 int redis_server_configure_replica(redis_server_t *server, char* master_host, int master_port);
- void check_wait_completion(redis_server_t *server);
 
 #endif // REDIS_SERVER_H
