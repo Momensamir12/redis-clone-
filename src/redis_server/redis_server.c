@@ -150,7 +150,7 @@ void redis_server_run(redis_server_t *redis) {
     {
     char rdb_path[512];
     snprintf(rdb_path, sizeof(rdb_path), "%s/%s", redis->rdb_dir, redis->rdb_filename);
-    rdb_load_full(rdb_path, redis);
+    rdb_load_full(rdb_path, redis->db);
     }
     event_loop_run(redis->event_loop);
 }
