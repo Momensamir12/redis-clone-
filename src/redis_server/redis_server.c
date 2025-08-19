@@ -33,7 +33,6 @@ static void handle_rdb_data(redis_server_t *server, const char *data, ssize_t da
 static void prepare_rdb_reception(redis_server_t *server);
 void track_replica_bytes(redis_server_t *server, const char *command_buffer);
 static void handle_master_replconf_getack(redis_server_t *server, int master_fd, const char *buffer, size_t bytes_read);
-static void handle_rdb_skip(redis_server_t *server, const char *data, ssize_t data_len);
 redis_server_t* redis_server_create(int port)
 {
     redis_server_t *redis = calloc(1, sizeof(redis_server_t));
@@ -507,12 +506,6 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
                    // handle_rdb_data(server, rdb_start, rdb_bytes_in_buffer);
                 
             }
-            return;
-        }
-        
-        // If we're currently skipping RDB data
-        if (server->replication_info->receiving_rdb) {
-            handle_rdb_skip(server, buffer, bytes_read);
             return;
         }
         
