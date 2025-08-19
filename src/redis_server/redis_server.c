@@ -690,14 +690,12 @@ static void process_multiple_replication_commands(redis_server_t *server, const 
     const char *buffer_end = buffer + buffer_len;
     
     while (current < buffer_end) {
-        // Find the start of the next command
         while (current < buffer_end && *current != '*') {
             current++;
         }
         
         if (current >= buffer_end) break;
         
-        // Find the end of this command by looking for the next '*' or end of buffer
         const char *next_command = current + 1;
         while (next_command < buffer_end && *next_command != '*') {
             next_command++;
@@ -705,7 +703,6 @@ static void process_multiple_replication_commands(redis_server_t *server, const 
         
         size_t cmd_len = next_command - current;
         
-        // Create a null-terminated string for this command
         char *single_cmd = malloc(cmd_len + 1);
         if (!single_cmd) {
             printf("Failed to allocate memory for command\n");
@@ -717,7 +714,6 @@ static void process_multiple_replication_commands(redis_server_t *server, const 
         
         printf("Executing single command: %s", single_cmd);
         
-        // Check if this is a GETACK command BEFORE updating offset
         int is_getack = (strstr(single_cmd, "REPLCONF") && strstr(single_cmd, "GETACK"));
         
         // For GETACK, respond with CURRENT offset (before processing this command)
