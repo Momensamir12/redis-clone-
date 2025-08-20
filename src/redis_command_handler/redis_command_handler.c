@@ -390,7 +390,8 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
     (void)server;
     client_t *c = (client_t *)client;
     printf("PING COMMAND DEBUG \n");    
-    if (c->sub_mode) {
+    if (c && c->sub_mode) {
+         printf("PING COMMAND DEBUG 2\n");
         char **response_args = malloc(2 * sizeof(char *));  
         if (!response_args) {
             return strdup("-ERR out of memory\r\n");
