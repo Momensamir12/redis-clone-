@@ -60,6 +60,7 @@ static redis_command_t commands[] = {
     {"config",handle_config_get_command, 2 , -1},
     {"keys", handle_keys_command, 2, 2},
     {"subscribe", handle_subscribe_command, 2, 2},
+    {"publish", handle_publish_command, 3, -1},
 
     {NULL, NULL, 0, 0} // Sentinel
 };
@@ -2050,7 +2051,8 @@ char *handle_publish_command(redis_server_t *server, char **args, int argc, void
         return strdup("-ERR invalid arguments\r\n");
     }
     char *channel_name = args[1];
-    channel_t *channel = hash_table_get(server->channels_map, channel_name);
+    redis_object_t *obj = hash_table_get(server->channels_map, channel_name);
+    channel_t *channel = obj->ptr;
     client_t * c = (client_t *)(client);
     redis_list_t *clients = channel->clients;
     c->sub_mode = 1;
