@@ -19,6 +19,7 @@
 #include "../lib/utils.h"
 #include "../rdb/rdb.h"
 #include "../rdb/io_buffer.h"
+#include "../channels/channel.h"
 
 #define NULL_RESP_VALUE "$-1\r\n"
 #define PSYNC_RESPONSE_SIZE 1024
@@ -389,14 +390,11 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
 {
     (void)server;
     client_t *c = (client_t *)client;
-    printf("PING COMMAND DEBUG \n");    
     if (c && c->sub_mode) {
-         printf("PING COMMAND DEBUG 2\n");
         char **response_args = malloc(2 * sizeof(char *));  
         if (!response_args) {
             return strdup("-ERR out of memory\r\n");
         }
-            printf("PING COMMAND DEBUG 2\n");    
         
         response_args[0] = strdup("pong");
         response_args[1] = strdup("");  
@@ -408,7 +406,6 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
         
         return result;
     }
-        printf("PING COMMAND DEBUG 3\n");    
     
     if (argc == 2) {
         return encode_bulk_string(args[1]);  
@@ -1997,16 +1994,14 @@ char *handle_subscribe_command(redis_server_t *server, char **args, int argc, vo
     char *channel_name = args[1];
     client_t *c = (client_t *)client;
     
-    // Get or create channel subscriber list
-    redis_object_t *list_obj = hash_table_get(server->channels_map, channel_name);
-    if (list_obj == NULL) {
-        list_obj = redis_object_create_list();
-        hash_table_set(server->channels_map, channel_name, list_obj);
+    channel_t *channel = hash_table_get(server->channels_map, channel_name);
+    if (channel == NULL) {
+        channel = redis_object_create_channel(channel_name);
+        hash_table_set(server->channels_map, channel_name, channel);
     }
     
-    redis_list_t *list = list_obj->ptr;
+    redis_list_t *list = channel->clients;
     
-    // Check if client is already subscribed
     list_node_t *node = list->head;
     int already_subscribed = 0;
     while (node) {
@@ -2022,13 +2017,12 @@ char *handle_subscribe_command(redis_server_t *server, char **args, int argc, vo
     if (!already_subscribed) {
         c->sub_mode = 1;
         c->subscribed_channels++;
+        channel->n_clients++;
         list_rpush(list, c);
     }
     
-    // Build proper RESP response
-    // Format: *3\r\n$9\r\nsubscribe\r\n$<len>\r\n<channel>\r\n:<count>\r\n
     int channel_len = strlen(channel_name);
-    int response_size = 64 + channel_len;  // Buffer for response
+    int response_size = 64 + channel_len;  
     char *response = malloc(response_size);
     if (!response) {
         return strdup("-ERR out of memory\r\n");
@@ -2048,4 +2042,34 @@ static int is_pubsub_command(const char *command) {
         }
     }
     return 0;  
+}
+
+char *handle_publish_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    if (!server || !args || argc < 2 || !client) {
+        return strdup("-ERR invalid arguments\r\n");
+    }
+    char *channel_name = args[1];
+    channel_t *channel = hash_table_get(server->channels_map, channel_name);
+    client_t * c = (client_t *)(client);
+    redis_list_t *clients = channel->clients;
+    c->sub_mode = 1;
+    if(!channel || !clients || clients->length ==0)
+    {
+       return encode_number(strdup("0"));
+    }
+    list_node_t *node = clients->head;
+    while(node)
+    {
+        client_t *cur = (client_t *)node->data;
+        if(cur)
+        {
+            send(cur->fd, args[2], strlen(args[2]), MSG_DONTWAIT);
+        }
+        node = node->next;
+    }
+
+    char n_st[10];
+    sprintf(n_st,"%d", channel->n_clients);
+    return encode_number(n_st);
 }

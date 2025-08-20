@@ -4,6 +4,7 @@
 #include "../hash_table/hash_table.h"
 #include "../lib/list.h"
 #include "../streams/redis_stream.h"
+#include "../channels/channel.h"
 // Create a new Redis database
 redis_db_t *redis_db_create(int id) {
     redis_db_t *db = malloc(sizeof(redis_db_t));
@@ -98,6 +99,15 @@ redis_object_t *redis_object_create_stream(void *stream_ptr) {
     return obj;
 }
 
+redis_object_t *redis_object_create_channel(char *name) {
+    channel_t *channel = create_channel(name);
+    if (!channel) {
+        return NULL;
+    }
+    
+    return redis_object_create(REDIS_CHANNEL, channel);
+}
+
 redis_object_t *redis_object_create_number (const char *value)
 {
     char *str = strdup(value);
@@ -106,26 +116,26 @@ redis_object_t *redis_object_create_number (const char *value)
     return redis_object_create(REDIS_NUMBER, str);
 }
 
-// Destroy a Redis object
 void redis_object_destroy(redis_object_t *obj) {
     if (!obj) return;
     
-    // Decrease reference count
     obj->refcount--;
     if (obj->refcount > 0) {
-        return;  // Still referenced elsewhere
+        return; // Still referenced elsewhere
     }
-    
-    // Free the data based on type
     switch (obj->type) {
         case REDIS_STRING:
+        case REDIS_NUMBER:
             free(obj->ptr);
             break;
         case REDIS_LIST:
             list_destroy((redis_list_t *)obj->ptr);
             break;
-        case REDIS_STREAM:  // Add this
+        case REDIS_STREAM:
             redis_stream_destroy((redis_stream_t *)obj->ptr);
+            break;
+        case REDIS_CHANNEL:  // Add this case
+            destroy_channel((channel_t *)obj->ptr);
             break;
     }
     

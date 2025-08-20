@@ -34,6 +34,7 @@ add_executable(redis
     src/lib/sds.c
     src/rdb/io_buffer.c
     src/rdb/rdb.c
+    src/channels/channel.c
 )
 
 

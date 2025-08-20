@@ -8,7 +8,8 @@ typedef enum {
     REDIS_SET,
     REDIS_ZSET,
     REDIS_STREAM,
-    REDIS_NUMBER
+    REDIS_NUMBER,
+    REDIS_CHANNEL
 } redis_type_t;
 
 #endif
