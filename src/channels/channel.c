@@ -24,7 +24,7 @@ channel_t *create_channel(char *name) {
 }
 
 void destroy_channel(channel_t *channel) {
-    if (!channel) return NULL;
+    if (!channel) return ;
     
     if (channel->name) {
         free(channel->name);
