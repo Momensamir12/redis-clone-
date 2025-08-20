@@ -62,7 +62,7 @@ static redis_command_t commands[] = {
     {"subscribe", handle_subscribe_command, 2, 2},
     {"publish", handle_publish_command, 3, -1},
 
-    {NULL, NULL, 0, 0} // Sentinel
+    {NULL, NULL, 0, 0} 
 };
 
 static const char *pubsub_allowed_commands[] = {
