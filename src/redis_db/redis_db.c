@@ -138,6 +138,9 @@ void redis_object_destroy(redis_object_t *obj) {
         case REDIS_CHANNEL:  // Add this case
             destroy_channel((channel_t *)obj->ptr);
             break;
+        case REDIS_ZSET:
+           redis_sorted_set_destroy((redis_sorted_set_t *)obj->ptr);
+           break;    
     }
     
     // Free the Redis object itself
