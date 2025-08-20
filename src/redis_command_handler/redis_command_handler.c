@@ -391,18 +391,15 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
     client_t *c = (client_t *)client;
     
     if (c->sub_mode) {
-        // In pub/sub mode, PING returns: ["pong", ""] (2 elements)
-        char **response_args = malloc(2 * sizeof(char *));  // Fixed: don't shadow args
+        char **response_args = malloc(2 * sizeof(char *));  
         if (!response_args) {
             return strdup("-ERR out of memory\r\n");
         }
         
         response_args[0] = strdup("pong");
-        response_args[1] = strdup("");  // Empty string
-        
+        response_args[1] = strdup("");  
         char *result = encode_resp_array(response_args, 2);
         
-        // Clean up
         free(response_args[0]);
         free(response_args[1]);
         free(response_args);
@@ -410,7 +407,6 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
         return result;
     }
     
-    // Normal mode (not pub/sub)
     if (argc == 2) {
         return encode_bulk_string(args[1]);  // Echo the message
     }

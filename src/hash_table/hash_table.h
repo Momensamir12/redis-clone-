@@ -30,7 +30,6 @@ void hash_table_set (hash_table_t *ht, char *key, void *value);
 void *hash_table_get(hash_table_t *ht, const char *key);
 void hash_table_delete(hash_table_t *ht, const char *key);
 void hash_table_destroy(hash_table_t *ht);
-// Iterator function declarations
 hash_table_iterator_t *hash_table_iterator_create(hash_table_t *ht);
 int hash_table_iterator_next(hash_table_iterator_t *iter, char **key, void **value);
 void hash_table_iterator_destroy(hash_table_iterator_t *iter);
