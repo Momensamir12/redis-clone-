@@ -61,6 +61,7 @@ static redis_command_t commands[] = {
     {"keys", handle_keys_command, 2, 2},
     {"subscribe", handle_subscribe_command, 2, 2},
     {"publish", handle_publish_command, 3, -1},
+    {"unsubscribe", handle_unsubscribe_command, 2, -1},
 
     {NULL, NULL, 0, 0} 
 };
@@ -2104,7 +2105,6 @@ char *handle_publish_command(redis_server_t *server, char **args, int argc, void
     free(response_args);
     free(response);
     
-    // Return the number of clients that received the message
     char n_str[32];
     snprintf(n_str, sizeof(n_str), "%d", sent_count);
     return encode_number(n_str);
@@ -2141,7 +2141,7 @@ char *handle_unsubscribe_command(redis_server_t *server, char **args, int argc, 
                 c->sub_mode = 0;
             }
                         if (channel->n_clients == 0) {
-                hash_table_remove(server->channels_map, channel_name);
+                hash_table_delete(server->channels_map, channel_name);
                 redis_object_destroy(obj);
             }
         }

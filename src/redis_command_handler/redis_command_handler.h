@@ -46,6 +46,7 @@ char *handle_config_get_command(redis_server_t *server, char **args, int argc, v
 char *handle_keys_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_subscribe_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_publish_command(redis_server_t *server, char **args, int argc, void *client);
+char *handle_unsubscribe_command(redis_server_t *server, char **args, int argc, void *client);
 void check_blocked_clients_timeout(redis_server_t *server);
 
 
