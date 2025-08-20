@@ -35,7 +35,7 @@ char *parse_resp_array(resp_buffer_t *resp_buffer)
     if (resp_buffer->buffer[resp_buffer->pos] == '*') {
         resp_buffer->pos += 1;
         result = extract_until_delimiter(resp_buffer);
-        return result;  // Return early for array count
+        return result;  
     }
     
     if (resp_buffer->buffer[resp_buffer->pos] == '$') {
@@ -89,8 +89,7 @@ static void toLowerCase(char *str) {
 char* encode_bulk_string(const char *str) {
     int len = strlen(str);
 
-    // Calculate space: "$" + num digits of len + "\r\n" + str + "\r\n" + null terminator
-    int total = 1 + 10 + 2 + len + 2 + 1;  // oversize buffer to be safe
+    int total = 1 + 10 + 2 + len + 2 + 1;  
     char *result = malloc(total);
     if (!result) return NULL;
 
@@ -104,11 +103,9 @@ char* encode_simple_string(const char *str) {
       return NULL;
     int len = strlen(str);
 
-    // Allocate memory for '+' + str + "\r\n" + '\0'
-    char *result = malloc(len + 4);  // 1 for '+', 2 for \r\n, 1 for \0
+    char *result = malloc(len + 4);  
     if (!result) return NULL;
 
-    // Format: +<string>\r\n
     sprintf(result, "+%s\r\n", str);
 
     return result;
@@ -119,35 +116,28 @@ char *encode_resp_array(char **args, int argc) {
         return strdup("*0\r\n");  // Empty array
     }
     
-    // First, calculate total size needed
     size_t total_size = 0;
     
-    // Array header: *<count>\r\n
     char count_str[32];
     int count_len = sprintf(count_str, "*%d\r\n", argc);
     total_size += count_len;
     
-    // Calculate size for each element (as bulk strings)
     for (int i = 0; i < argc; i++) {
         if (args[i] == NULL) {
-            total_size += 5;  // "$-1\r\n" for null
+            total_size += 5;  
         } else {
             size_t len = strlen(args[i]);
-            // $<len>\r\n<data>\r\n
             char len_str[32];
             int len_size = sprintf(len_str, "%zu", len);
-            total_size += 1 + len_size + 2 + len + 2;  // $ + len + \r\n + data + \r\n
+            total_size += 1 + len_size + 2 + len + 2; 
         }
     }
     
-    // Allocate result buffer
-    char *result = malloc(total_size + 1);  // +1 for null terminator
+    char *result = malloc(total_size + 1);  
     if (!result) return NULL;
     
-    // Build the response
     char *pos = result;
     
-    // Write array header
     memcpy(pos, count_str, count_len);
     pos += count_len;
     
@@ -167,7 +157,7 @@ char *encode_resp_array(char **args, int argc) {
         }
     }
     
-    *pos = '\0';  // Null terminate
+    *pos = '\0';  
     return result;
 }
 
@@ -181,3 +171,4 @@ char *encode_number(const char *str)
 
     return result;
 }
+

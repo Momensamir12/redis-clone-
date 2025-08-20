@@ -18,7 +18,6 @@ redis_stream_t *redis_stream_create(void)
     if (!stream)
         return NULL;
 
-    // Create radix tree to store entries by ID
     stream->entries_tree = radix_tree_create();
     if (!stream->entries_tree)
     {
@@ -29,7 +28,7 @@ redis_stream_t *redis_stream_create(void)
     stream->last_timestamp_ms = 0;
     stream->last_sequence = 0;
     stream->length = 0;
-    stream->max_len = 0; // Unlimited
+    stream->max_len = 0; 
 
     return stream;
 }
@@ -39,16 +38,27 @@ void redis_stream_destroy(redis_stream_t *stream)
     if (!stream)
         return;
 
-    // TODO: We need to iterate through radix tree and free all entries
-    // For now, this will leak the entry data
     if (stream->entries_tree)
     {
+        void **entries = NULL;
+        int count = 0;
+        radix_tree_range(stream->entries_tree, "0-0", "999999999999999-999999999999999", 
+                        &entries, &count);
+        
+        if (entries) {
+            for (int i = 0; i < count; i++) {
+                stream_entry_destroy((stream_entry_t *)entries[i]);
+            }
+            free(entries);
+        }
+        
         radix_tree_destroy(stream->entries_tree);
     }
 
     free(stream->last_id);
     free(stream);
 }
+
 int parse_stream_id(const char *id_str, uint64_t *timestamp, uint64_t *sequence)
 {
     if (!id_str || !timestamp || !sequence)
@@ -61,17 +71,16 @@ int parse_stream_id(const char *id_str, uint64_t *timestamp, uint64_t *sequence)
     char *endptr;
     *timestamp = strtoull(id_str, &endptr, 10);
     if (endptr != dash)
-        return -1; // Invalid timestamp part
+        return -1; 
 
     *sequence = strtoull(dash + 1, &endptr, 10);
     if (*endptr != '\0')
-        return -1; // Invalid sequence part
+        return -1; 
 
     return 0;
 }
 
-// Helper function to compare two stream IDs
-// Returns: -1 if id1 < id2, 0 if equal, 1 if id1 > id2
+
 static int compare_stream_ids(const char *id1, const char *id2)
 {
     uint64_t ts1, seq1, ts2, seq2;
@@ -86,7 +95,6 @@ static int compare_stream_ids(const char *id1, const char *id2)
     if (ts1 > ts2)
         return 1;
 
-    // Same timestamp, compare sequence
     if (seq1 < seq2)
         return -1;
     if (seq1 > seq2)
@@ -98,10 +106,9 @@ static int compare_stream_ids(const char *id1, const char *id2)
 
 static int validate_explicit_id(const char *new_id, const char *last_id)
 {
-    // Special case: 0-0 is never valid
     if (strcmp(new_id, "0-0") == 0)
     {
-        return -2; // Special error for 0-0
+        return -2; 
     }
 
     if (!last_id)
@@ -109,7 +116,6 @@ static int validate_explicit_id(const char *new_id, const char *last_id)
         return compare_stream_ids(new_id, "0-0") > 0 ? 0 : -1;
     }
 
-    // ID must be greater than last_id
     return compare_stream_ids(new_id, last_id) > 0 ? 0 : -1;
 }
 stream_entry_t *stream_entry_create(const char *id, const char **field_names,
@@ -129,7 +135,6 @@ stream_entry_t *stream_entry_create(const char *id, const char **field_names,
         return NULL;
     }
 
-    // Parse ID to extract timestamp and sequence
     char *dash = strchr(id, '-');
     if (dash)
     {
@@ -137,7 +142,6 @@ stream_entry_t *stream_entry_create(const char *id, const char **field_names,
         entry->sequence = strtoull(dash + 1, NULL, 10);
     }
 
-    // Create fields array
     entry->fields = calloc(field_count, sizeof(stream_field_t));
     if (!entry->fields)
     {
@@ -153,7 +157,6 @@ stream_entry_t *stream_entry_create(const char *id, const char **field_names,
 
         if (!entry->fields[i].name || !entry->fields[i].value)
         {
-            // Cleanup on error
             for (size_t j = 0; j <= i; j++)
             {
                 free(entry->fields[j].name);
@@ -194,17 +197,15 @@ static int is_partial_id_format(const char *id_str, uint64_t *timestamp)
     if (!dash)
         return 0;
 
-    // Check if sequence part is "*"
     if (strcmp(dash + 1, "*") != 0)
         return 0;
 
-    // Parse timestamp part
     char *endptr;
     *timestamp = strtoull(id_str, &endptr, 10);
     if (endptr != dash)
-        return 0; // Invalid timestamp part
+        return 0; 
 
-    return 1; // Valid "timestamp-*" format
+    return 1; 
 }
 
 static uint64_t find_last_sequence_for_timestamp(redis_stream_t *stream, uint64_t timestamp)
@@ -226,14 +227,11 @@ static char *generate_stream_id(redis_stream_t *stream, const char *id_hint, int
 
     if (id_hint && strcmp(id_hint, "*") != 0)
     {
-        // Check if it's partial format "timestamp-*"
         uint64_t partial_timestamp;
         if (is_partial_id_format(id_hint, &partial_timestamp))
         {
-            // Handle "timestamp-*" format
             timestamp_ms = partial_timestamp;
 
-            // Find last sequence for this timestamp
             uint64_t last_seq = find_last_sequence_for_timestamp(stream, timestamp_ms);
 
             if (last_seq == (uint64_t)-1)
@@ -300,7 +298,6 @@ static char *generate_stream_id(redis_stream_t *stream, const char *id_hint, int
     }
     else
     {
-        // Auto-generate both timestamp and sequence ("*")
         timestamp_ms = get_current_timestamp_ms();
 
         if (timestamp_ms == stream->last_timestamp_ms)
@@ -313,21 +310,18 @@ static char *generate_stream_id(redis_stream_t *stream, const char *id_hint, int
         }
         else
         {
-            // Clock went backwards, use last timestamp
             timestamp_ms = stream->last_timestamp_ms;
             sequence = stream->last_sequence + 1;
         }
     }
 
-    // Update stream's last ID info
     stream->last_timestamp_ms = timestamp_ms;
     stream->last_sequence = sequence;
 
-    // Generate ID string
     char *id = malloc(32);
     if (!id)
     {
-        *error_code = 3; // Memory allocation error
+        *error_code = 3; 
         return NULL;
     }
 
@@ -348,11 +342,10 @@ char *redis_stream_add(redis_stream_t *stream, const char *id,
     if (!stream || field_count == 0)
     {
         if (error_code)
-            *error_code = 4; // Invalid parameters
+            *error_code = 4; 
         return NULL;
     }
 
-    // Generate or validate ID
     int id_error = 0;
     char *entry_id = generate_stream_id(stream, id, &id_error);
     if (!entry_id)
@@ -392,7 +385,6 @@ size_t redis_stream_len(redis_stream_t *stream)
     return stream ? stream->length : 0;
 }
 
-// Helper function to get the next stream ID after a given ID
 int get_next_stream_id(const char *current_id, char *next_id, size_t buffer_size)
 {
     if (!current_id || !next_id) return -1;
@@ -402,16 +394,13 @@ int get_next_stream_id(const char *current_id, char *next_id, size_t buffer_size
         return -1;
     }
     
-    // Increment sequence
     if (sequence < UINT64_MAX) {
         sequence++;
     } else {
-        // Sequence overflowed, increment timestamp and reset sequence
         if (timestamp < UINT64_MAX) {
             timestamp++;
             sequence = 0;
         } else {
-            // Both maxed out, return error
             return -1;
         }
     }

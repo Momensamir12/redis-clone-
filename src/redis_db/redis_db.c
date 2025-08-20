@@ -6,7 +6,6 @@
 #include "../streams/redis_stream.h"
 #include "../channels/channel.h"
 #include "../lib/sorted_set.h"
-// Create a new Redis database
 redis_db_t *redis_db_create(int id) {
     redis_db_t *db = malloc(sizeof(redis_db_t));
     if (!db) {
@@ -31,38 +30,30 @@ redis_db_t *redis_db_create(int id) {
     return db;
 }
 
-// Destroy a Redis database and all its contents
 void redis_db_destroy(redis_db_t *db) {
     if (!db) return;
     
     if (db->dict) {
-        // Iterate through all buckets
         for (size_t i = 0; i < db->dict->size; i++) {
             hash_entry_t *entry = db->dict->buckets[i];
             while (entry) {
-                // Free the Redis object
                 redis_object_t *obj = (redis_object_t *)entry->value;
                 redis_object_destroy(obj);
                 entry = entry->next;
             }
         }
         
-        // Destroy the hash table itself
         hash_table_destroy(db->dict);
     }
     
-    // Clean up expires dictionary
     if (db->expires) {
-        // Values in expires dict are timestamps (not Redis objects)
-        // so they don't need special cleanup
+
         hash_table_destroy(db->expires);
     }
     
-    // Free the database structure
     free(db);
 }
 
-// Create a Redis object
 redis_object_t *redis_object_create(redis_type_t type, void *ptr) {
     redis_object_t *obj = malloc(sizeof(redis_object_t));
     if (!obj) {
@@ -71,7 +62,7 @@ redis_object_t *redis_object_create(redis_type_t type, void *ptr) {
     
     obj->type = type;
     obj->ptr = ptr;
-    obj->refcount = 1;  // Start with reference count of 1
+    obj->refcount = 1;  
     
     return obj;
 }
@@ -122,7 +113,7 @@ void redis_object_destroy(redis_object_t *obj) {
     
     obj->refcount--;
     if (obj->refcount > 0) {
-        return; // Still referenced elsewhere
+        return; 
     }
     switch (obj->type) {
         case REDIS_STRING:
@@ -135,7 +126,7 @@ void redis_object_destroy(redis_object_t *obj) {
         case REDIS_STREAM:
             redis_stream_destroy((redis_stream_t *)obj->ptr);
             break;
-        case REDIS_CHANNEL:  // Add this case
+        case REDIS_CHANNEL:  
             destroy_channel((channel_t *)obj->ptr);
             break;
         case REDIS_ZSET:
@@ -143,7 +134,6 @@ void redis_object_destroy(redis_object_t *obj) {
            break;    
     }
     
-    // Free the Redis object itself
     free(obj);
 }
 

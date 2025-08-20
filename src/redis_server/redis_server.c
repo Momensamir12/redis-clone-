@@ -119,7 +119,6 @@ void redis_server_destroy(redis_server_t *redis) {
         list_destroy(redis->clients);
     }
     
-    // blocked_clients list doesn't own the clients, just references
     if (redis->blocked_clients) {
         list_destroy(redis->blocked_clients);
     }
@@ -166,7 +165,6 @@ void redis_server_run(redis_server_t *redis) {
     event_loop_run(redis->event_loop);
 }
 
-// redis_server.c
 
 static void handle_server_accept(event_loop_t *event_loop, int fd, uint32_t events, void *data) {
     redis_server_t *redis = (redis_server_t *)data;
@@ -181,14 +179,12 @@ static void handle_server_accept(event_loop_t *event_loop, int fd, uint32_t even
         return;
     }
     
-    // Set non-blocking
     if (set_nonblocking(client_fd) < 0) {
         perror("set_nonblocking");
         close(client_fd);
         return;
     }
     
-    // Create client object
     client_t *client = create_client(client_fd);
     if (!client) {
         perror("create_client");
@@ -235,15 +231,10 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                 // Pass server and client to command handler
                 char *response = handle_command(redis, buffer, client);
                 
-                // NULL response means client was blocked
                 if (response) {
                     send(fd, response, strlen(response), MSG_NOSIGNAL);
                     free(response);
                     
-                    // PROPAGATE TO REPLICAS IF:
-                    // 1. We're a master
-                    // 2. This was a write command
-                    // 3. Command executed successfully (got a response)
                     if (is_write_cmd && 
                         redis->replication_info && 
                         redis->replication_info->role == MASTER &&
@@ -254,7 +245,6 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                 }
             }
             else if (bytes_read == 0) {
-                // Client disconnected
                 printf("Client %d disconnected\n", fd);
                 
                 
@@ -326,14 +316,11 @@ static void handle_timer_interrupt(event_loop_t *loop, int fd, uint32_t events, 
     (void)events;
     redis_server_t *redis = (redis_server_t *)data;
     
-    // Clear timer
     uint64_t expirations;
     read(fd, &expirations, sizeof(expirations));
     
-    // Check blocked clients for timeout
     check_blocked_clients_timeout(redis);
     
-    // Check pending WAIT command
     check_wait_completion(redis);
 }
 
@@ -343,7 +330,6 @@ int redis_server_configure_master(redis_server_t *server)
         return -1;
     }
     
-    // Allocate memory for the struct itself, not a pointer to it
     replication_info_t *info = malloc(sizeof(replication_info_t));
     if (!info) {
         return -1;
@@ -351,11 +337,10 @@ int redis_server_configure_master(redis_server_t *server)
     
     info->role = MASTER;
     info->connected_slaves = 0;
-    info->master_host = NULL;  // Masters don't have a master
+    info->master_host = NULL;  
     info->master_port = 0;
     generate_replication_id(info->replication_id);
     info->master_repl_offset = 0;
-    // Store the replication info in the server structure
     server->replication_info = info;
     for (int i = 0; i < MAX_REPLICAS; i++) {
         info->replicas_fd[i] = -1; 
@@ -387,10 +372,9 @@ int redis_server_configure_replica(redis_server_t *server, char* master_host, in
     info->master_port = master_port;
     generate_replication_id(info->replication_id);
     
-    info->replica_offset = 0;           // Bytes this replica has processed
+    info->replica_offset = 0;           
     info->master_repl_offset = 0;
     
-    // Initialize RDB-related fields
     info->receiving_rdb = 0;
     info->expected_rdb_size = 0;
     info->received_rdb_size = 0;
@@ -438,7 +422,6 @@ static void connect_to_master(redis_server_t *server)
 
     event_loop_add_fd(server->event_loop, master_fd, EPOLLIN | EPOLLET, handle_master_data, NULL);
 
-    // Start with step 1: PING
     send_next_handshake_command(server);
 }
 
@@ -448,7 +431,7 @@ static void send_next_handshake_command(redis_server_t *server)
 
     switch (server->replication_info->handshake_step)
     {
-    case 0: // Send PING
+    case 0: 
     {
         char *ping_cmd = "*1\r\n$4\r\nPING\r\n";
         send(fd, ping_cmd, strlen(ping_cmd), MSG_NOSIGNAL);
@@ -456,7 +439,7 @@ static void send_next_handshake_command(redis_server_t *server)
     }
     break;
 
-    case 1: // Send REPLCONF listening-port
+    case 1:
     {
         char port_str[16];
         snprintf(port_str, sizeof(port_str), "%d", server->server->port);
@@ -471,7 +454,7 @@ static void send_next_handshake_command(redis_server_t *server)
     }
     break;
 
-    case 2: // Send REPLCONF capa psync2
+    case 2:
     {
         char *capa_cmd = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
         send(fd, capa_cmd, strlen(capa_cmd), MSG_NOSIGNAL);
@@ -479,7 +462,7 @@ static void send_next_handshake_command(redis_server_t *server)
     }
     break;
 
-    case 3: // Send PSYNC
+    case 3: 
     {
         char *psync_cmd = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
         send(fd, psync_cmd, strlen(psync_cmd), MSG_NOSIGNAL);
@@ -501,7 +484,6 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
     buffer[bytes_read] = '\0';
     printf("Received from master: %.*s\n", (int)bytes_read, buffer);
 
-    // Handle handshake responses
     if (server->replication_info->handshake_step < 4) {
         if (strstr(buffer, "+PONG") || strstr(buffer, "+OK")) {
             server->replication_info->handshake_step++;
@@ -510,10 +492,9 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
             }
         }
         else if (strstr(buffer, "+FULLRESYNC")) {
-            server->replication_info->handshake_step = 4; // Mark handshake complete
+            server->replication_info->handshake_step = 4; 
             printf("Handshake complete! Ready for RDB...\n");
             
-            // Check if RDB data starts in the same buffer after FULLRESYNC
             char *rdb_start = strstr(buffer, "$");
             if (rdb_start) {
                 printf("Found RDB data in same buffer as FULLRESYNC\n");
@@ -525,15 +506,12 @@ static void handle_master_data(event_loop_t *loop, int fd, uint32_t events, void
         return;
     }
 
-    // After handshake is complete (step >= 4)
     
-    // Check if this buffer contains RDB size marker or is RDB data
     if (buffer[0] == '$' || (server->replication_info->rdb_started && !server->replication_info->rdb_complete)) {
         handle_rdb_buffer(server, buffer, bytes_read);
         return;
     }
     
-    // RDB is complete - process replication commands
     printf("Processing replication command from master\n");
     handle_replication_command(server, fd, buffer, bytes_read);
 }
@@ -619,19 +597,17 @@ static int load_rdb_file(redis_server_t *server, const char *rdb_path)
 }
 
 static int is_write_command(const char *buffer) {
-    // Quick RESP parsing to get the first argument (command)
     if (buffer[0] != '*') {
-        return 0;  // Not a RESP array
+        return 0;  
     }
     
-    // Find first command after *n\r\n$len\r\n
     const char *cmd_start = strstr(buffer, "\r\n$");
     if (!cmd_start) return 0;
     
     cmd_start = strstr(cmd_start + 3, "\r\n");
     if (!cmd_start) return 0;
     
-    cmd_start += 2;  // Skip \r\n
+    cmd_start += 2;  
     
     if (strncasecmp(cmd_start, "SET", 3) == 0 ||
         strncasecmp(cmd_start, "DEL", 3) == 0 ||
@@ -671,7 +647,6 @@ static void process_multiple_commands(redis_server_t *server, char *buffer, size
             
             printf("Executing: %s", single_cmd);
             
-            // Execute command (don't track bytes here, already tracked in handle_master_data)
             char *response = handle_command(server, single_cmd, NULL);
             if (response) free(response);
             free(single_cmd);
@@ -690,7 +665,6 @@ void track_replica_bytes(redis_server_t *server, const char *command_buffer) {
     }
     
     if (server->replication_info->role == SLAVE) {
-        // Use strlen for now, but in a real implementation you'd want to track actual bytes
         size_t bytes = strlen(command_buffer);
         server->replication_info->replica_offset += bytes;
         printf("Replica offset updated: +%zu = %lu total bytes\n", 
@@ -736,11 +710,9 @@ static void process_multiple_replication_commands(redis_server_t *server, const 
         
         int is_getack = (strstr(single_cmd, "REPLCONF") && strstr(single_cmd, "GETACK"));
         
-        // For GETACK, respond with CURRENT offset (before processing this command)
         if (is_getack) {
             printf("Received REPLCONF GETACK command\n");
             
-            // Send ACK response with current offset (before processing this GETACK)
             char offset_str[32];
             snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
             int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
@@ -759,10 +731,9 @@ static void process_multiple_replication_commands(redis_server_t *server, const 
                 printf("Successfully sent ACK response\n");
             }
         } else {
-            // Process non-GETACK commands normally
             char *response = handle_command(server, single_cmd, NULL);
             if (response) {
-                free(response); // Don't send responses back to master for replication commands
+                free(response); 
             }
         }
         
@@ -779,7 +750,6 @@ static void process_rdb_data(redis_server_t *server, const char *data, ssize_t d
 {
     replication_info_t *repl = server->replication_info;
     
-    // Calculate how much RDB data to consume from this buffer
     ssize_t remaining_rdb = repl->expected_rdb_size - repl->received_rdb_size;
     ssize_t rdb_bytes_to_consume = (data_len <= remaining_rdb) ? data_len : remaining_rdb;
     
@@ -789,12 +759,10 @@ static void process_rdb_data(redis_server_t *server, const char *data, ssize_t d
            repl->received_rdb_size, repl->expected_rdb_size,
            (double)repl->received_rdb_size / repl->expected_rdb_size * 100);
     
-    // Check if RDB reception is complete
     if (repl->received_rdb_size >= repl->expected_rdb_size) {
         printf("RDB reception complete! Ready for commands.\n");
         repl->rdb_complete = 1;
         
-        // Process any remaining data in this buffer as commands
         if (data_len > rdb_bytes_to_consume) {
             const char *commands_start = data + rdb_bytes_to_consume;
             ssize_t commands_len = data_len - rdb_bytes_to_consume;
@@ -808,7 +776,6 @@ static void process_rdb_data(redis_server_t *server, const char *data, ssize_t d
 static void handle_rdb_buffer(redis_server_t *server, const char *buffer, ssize_t bytes_read)
 {
     if (!server->replication_info->rdb_started) {
-        // This should start with RDB size marker
         if (buffer[0] == '$') {
             server->replication_info->expected_rdb_size = atol(buffer + 1);
             server->replication_info->received_rdb_size = 0;
@@ -817,7 +784,6 @@ static void handle_rdb_buffer(redis_server_t *server, const char *buffer, ssize_
             
             printf("Starting RDB reception: expecting %ld bytes\n", server->replication_info->expected_rdb_size);
             
-            // Find where RDB data starts in this buffer
             char *rdb_start = strstr(buffer, "\r\n");
             if (rdb_start) {
                 rdb_start += 2; // Skip \r\n
@@ -831,7 +797,6 @@ static void handle_rdb_buffer(redis_server_t *server, const char *buffer, ssize_
             printf("Warning: Expected RDB size marker, got: %.*s\n", (int)bytes_read, buffer);
         }
     } else {
-        // Continue receiving RDB data
         process_rdb_data(server, buffer, bytes_read);
     }
 }
@@ -844,15 +809,12 @@ static void handle_rdb_buffer(redis_server_t *server, const char *buffer, ssize_
     wait_state_t *wait = &server->pending_wait;
     long long current_time = get_current_time_ms();
     
-    // Check if timeout expired
     if (current_time >= wait->start_time + wait->timeout_ms) {
-        // Timeout - count current acks and respond
         int acked_count = count_acked_replicas(server, wait->target_offset);
         complete_wait_command(server, acked_count);
         return;
     }
     
-    // Check if enough replicas have acked
     int acked_count = count_acked_replicas(server, wait->target_offset);
     if (acked_count >= wait->expected_replicas) {
         complete_wait_command(server, acked_count);
@@ -875,7 +837,6 @@ static void complete_wait_command(redis_server_t *server, int acked_count) {
         return;
     }
     
-    // Send response to waiting client
     char response[32];
     sprintf(response, ":%d\r\n", acked_count);
     
@@ -884,7 +845,6 @@ static void complete_wait_command(redis_server_t *server, int acked_count) {
     
     printf("WAIT completed: %d replicas acked\n", acked_count);
     
-    // Clear wait state
     server->pending_wait.active = 0;
     server->pending_wait.client = NULL;
 }

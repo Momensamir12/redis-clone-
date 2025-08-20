@@ -115,11 +115,10 @@ void client_unblock_stream(client_t *client)
         return;
     
     if (c->transaction_commands) {
-        // Much simpler - just free the command strings
         list_node_t *node = c->transaction_commands->head;
         while (node) {
             char *command_buffer = (char *)node->data;
-            free(command_buffer);  // Just free the string
+            free(command_buffer);  
             node = node->next;
         }
         

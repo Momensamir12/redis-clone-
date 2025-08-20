@@ -22,11 +22,9 @@ typedef struct redis_db {
     int id;                 
 } redis_db_t;
 
-// Database functions
 redis_db_t *redis_db_create(int id);
 void redis_db_destroy(redis_db_t *db);
 
-// Redis object functions
 redis_object_t *redis_object_create(redis_type_t type, void *ptr);
 void redis_object_destroy(redis_object_t *obj);
 redis_object_t *redis_object_create_string(const char *value);
@@ -35,6 +33,5 @@ redis_object_t *redis_object_create_stream(void *stream_ptr);
 redis_object_t *redis_object_create_number (const char *value);
 redis_object_t *redis_object_create_channel(char *name);
 redis_object_t *redis_object_create_sorted_set(void);
-// Utility function to get type name
 const char *redis_type_to_string(redis_type_t type);
 #endif

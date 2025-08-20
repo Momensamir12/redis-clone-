@@ -71,4 +71,4 @@ int redis_server_configure_replica(redis_server_t *server, char* master_host, in
 void check_wait_completion(redis_server_t *server);
 void init_channel_data(redis_server_t *server);
 
-#endif // REDIS_SERVER_H
+#endif 

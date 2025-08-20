@@ -162,7 +162,6 @@ static void split_node(radix_node_t *node, size_t split_pos) {
     node->children_count = 0;
     node->children_capacity = 0;
     
-    // Add new child to current node
     add_child(node, new_child);
 }
 
@@ -303,7 +302,6 @@ static void radix_tree_range_traverse(radix_node_t *node, char *start, char *end
         }
     }
     
-    // Traverse children with updated path
     for (size_t i = 0; i < node->children_count; i++) {
         radix_tree_range_traverse(node->children[i], start, end, results, count, capacity, 
                                  full_path, full_path_len);
@@ -320,7 +318,6 @@ void radix_tree_range(radix_tree_t *tree, char *start, char *end, void ***result
         return;
     }
     
-    // Handle special cases
     char *actual_start = start;
     char *actual_end = end;
     
@@ -340,17 +337,14 @@ void radix_tree_range(radix_tree_t *tree, char *start, char *end, void ***result
     }
     *count = 0;
     
-    // Start traversal with empty path
     radix_tree_range_traverse(tree->root, actual_start, actual_end, results, count, &capacity, "", 0);
 }
 
 void radix_tree_print_node(radix_node_t *node, int depth) {
     if (!node) return;
     
-    // Print indentation
     for (int i = 0; i < depth; i++) printf("  ");
     
-    // Print node info
     printf("|-- ");
     if (node->key_len > 0) {
         printf("'%.*s'", (int)node->key_len, node->key);
@@ -363,7 +357,6 @@ void radix_tree_print_node(radix_node_t *node, int depth) {
     }
     printf(" [%zu children]\n", node->children_count);
     
-    // Print children
     for (size_t i = 0; i < node->children_count; i++) {
         radix_tree_print_node(node->children[i], depth + 1);
     }
@@ -391,7 +384,6 @@ static void radix_node_destroy(radix_node_t *node) {
         radix_node_destroy(node->children[i]);
     }
     
-    // Free node resources
     free(node->key);
     free(node->children);
     free(node);

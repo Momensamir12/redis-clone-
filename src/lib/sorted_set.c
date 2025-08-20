@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <time.h>
 
-// Random level generator for skip list
 static int random_level(void) {
     static int first_call = 1;
     if (first_call) {
@@ -20,7 +19,6 @@ static int random_level(void) {
     return level;
 }
 
-// Create skip list node
 static skip_list_node_t *skiplist_node_create(int level, double score, const char *member) {
     skip_list_node_t *node = malloc(sizeof(skip_list_node_t));
     if (!node) return NULL;
@@ -41,7 +39,6 @@ static skip_list_node_t *skiplist_node_create(int level, double score, const cha
     
     node->level = level;
     
-    // Initialize forward pointers to NULL
     for (int i = 0; i < level; i++) {
         node->forward[i] = NULL;
     }
@@ -49,7 +46,6 @@ static skip_list_node_t *skiplist_node_create(int level, double score, const cha
     return node;
 }
 
-// Destroy skip list node
 static void skiplist_node_destroy(skip_list_node_t *node) {
     if (!node) return;
     
@@ -58,12 +54,10 @@ static void skiplist_node_destroy(skip_list_node_t *node) {
     free(node);
 }
 
-// Create skip list
 skip_list_t *skiplist_create(void) {
     skip_list_t *sl = malloc(sizeof(skip_list_t));
     if (!sl) return NULL;
     
-    // Create header node with maximum level
     sl->header = skiplist_node_create(SKIPLIST_MAXLEVEL, 0.0, "");
     if (!sl->header) {
         free(sl);
@@ -76,7 +70,6 @@ skip_list_t *skiplist_create(void) {
     return sl;
 }
 
-// Destroy skip list
 void skiplist_destroy(skip_list_t *sl) {
     if (!sl) return;
     
@@ -92,25 +85,21 @@ void skiplist_destroy(skip_list_t *sl) {
     free(sl);
 }
 
-// Compare function for skip list ordering
-// Returns: -1 if a < b, 0 if a == b, 1 if a > b
+
 static int skiplist_compare(double score1, const char *member1, double score2, const char *member2) {
     if (score1 < score2) return -1;
     if (score1 > score2) return 1;
     
-    // Same score, compare by member lexicographically
     int cmp = strcmp(member1, member2);
     if (cmp < 0) return -1;
     if (cmp > 0) return 1;
     return 0;
 }
 
-// Insert node into skip list
 skip_list_node_t *skiplist_insert(skip_list_t *sl, double score, const char *member) {
     skip_list_node_t *update[SKIPLIST_MAXLEVEL];
     skip_list_node_t *current = sl->header;
     
-    // Find insertion point
     for (int i = sl->level - 1; i >= 0; i--) {
         while (current->forward[i] && 
                skiplist_compare(current->forward[i]->score, current->forward[i]->member, score, member) < 0) {
@@ -119,20 +108,16 @@ skip_list_node_t *skiplist_insert(skip_list_t *sl, double score, const char *mem
         update[i] = current;
     }
     
-    // Check if member already exists
     current = current->forward[0];
     if (current && skiplist_compare(current->score, current->member, score, member) == 0) {
-        // Update existing node's score
         current->score = score;
         return current;
     }
     
-    // Create new node
     int level = random_level();
     skip_list_node_t *new_node = skiplist_node_create(level, score, member);
     if (!new_node) return NULL;
     
-    // Update skip list level if necessary
     if (level > sl->level) {
         for (int i = sl->level; i < level; i++) {
             update[i] = sl->header;
@@ -140,7 +125,6 @@ skip_list_node_t *skiplist_insert(skip_list_t *sl, double score, const char *mem
         sl->level = level;
     }
     
-    // Insert node
     for (int i = 0; i < level; i++) {
         new_node->forward[i] = update[i]->forward[i];
         update[i]->forward[i] = new_node;
@@ -150,7 +134,6 @@ skip_list_node_t *skiplist_insert(skip_list_t *sl, double score, const char *mem
     return new_node;
 }
 
-// Find node in skip list
 skip_list_node_t *skiplist_find(skip_list_t *sl, double score, const char *member) {
     skip_list_node_t *current = sl->header;
     
@@ -169,12 +152,10 @@ skip_list_node_t *skiplist_find(skip_list_t *sl, double score, const char *membe
     return NULL;
 }
 
-// Delete node from skip list
 int skiplist_delete(skip_list_t *sl, double score, const char *member) {
     skip_list_node_t *update[SKIPLIST_MAXLEVEL];
     skip_list_node_t *current = sl->header;
     
-    // Find node to delete
     for (int i = sl->level - 1; i >= 0; i--) {
         while (current->forward[i] && 
                skiplist_compare(current->forward[i]->score, current->forward[i]->member, score, member) < 0) {
@@ -185,10 +166,9 @@ int skiplist_delete(skip_list_t *sl, double score, const char *member) {
     
     current = current->forward[0];
     if (!current || skiplist_compare(current->score, current->member, score, member) != 0) {
-        return 0; // Node not found
+        return 0; 
     }
     
-    // Remove node from all levels
     for (int i = 0; i < sl->level; i++) {
         if (update[i]->forward[i] != current) break;
         update[i]->forward[i] = current->forward[i];
@@ -196,7 +176,6 @@ int skiplist_delete(skip_list_t *sl, double score, const char *member) {
     
     skiplist_node_destroy(current);
     
-    // Update skip list level
     while (sl->level > 1 && sl->header->forward[sl->level - 1] == NULL) {
         sl->level--;
     }
@@ -205,7 +184,6 @@ int skiplist_delete(skip_list_t *sl, double score, const char *member) {
     return 1;
 }
 
-// Create redis sorted set
 redis_sorted_set_t *redis_sorted_set_create(void) {
     redis_sorted_set_t *zset = malloc(sizeof(redis_sorted_set_t));
     if (!zset) return NULL;
@@ -226,7 +204,6 @@ redis_sorted_set_t *redis_sorted_set_create(void) {
     return zset;
 }
 
-// Destroy redis sorted set
 void redis_sorted_set_destroy(redis_sorted_set_t *zset) {
     if (!zset) return;
     
@@ -235,25 +212,20 @@ void redis_sorted_set_destroy(redis_sorted_set_t *zset) {
     free(zset);
 }
 
-// Add member to sorted set
 int sorted_set_add(redis_sorted_set_t *zset, const char *member, double score) {
     if (!zset || !member) return -1;
     
-    // Check if member already exists
     double *existing_score = (double *)hash_table_get(zset->dict, member);
     bool is_new = (existing_score == NULL);
     
     if (existing_score) {
-        // Remove from skip list with old score
         skiplist_delete(zset->skiplist, *existing_score, member);
         free(existing_score);
     }
     
-    // Insert with new score
     skip_list_node_t *node = skiplist_insert(zset->skiplist, score, member);
     if (!node) return -1;
     
-    // Update hash table
     double *score_ptr = malloc(sizeof(double));
     if (!score_ptr) {
         if (is_new) {
@@ -265,7 +237,7 @@ int sorted_set_add(redis_sorted_set_t *zset, const char *member, double score) {
     
     hash_table_set(zset->dict, strdup(member), score_ptr);
     
-    return is_new ? 1 : 0; // Return 1 for new member, 0 for updated
+    return is_new ? 1 : 0; 
 }
 
 // Remove member from sorted set

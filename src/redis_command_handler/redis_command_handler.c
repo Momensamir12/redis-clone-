@@ -25,7 +25,7 @@
 #define NULL_RESP_VALUE "$-1\r\n"
 #define PSYNC_RESPONSE_SIZE 1024
 #define RDB_RESPONSE_SIZE 4096
-#define RDB_DEFAULT_DIR  "/tmp/redis-files"
+#define RDB_DEFAULT_DIR "/tmp/redis-files"
 #define RDB_TEMP_FILE "temp.rdb"
 #define RDB_DEFAULT_FILE "dump.rdb"
 #define RESP_DEFAULT_ERROR "-ERR unknown error\r\n"
@@ -50,7 +50,7 @@ static redis_command_t commands[] = {
     {"xadd", handle_xadd_command, 4, -1},
     {"xrange", handle_xrange_command, 4, 6},
     {"xread", handle_xread_command, 4, -1},
-    {"incr", handle_incr_command,2 , -1},
+    {"incr", handle_incr_command, 2, -1},
     {"multi", handle_multi_command, 1, 1},
     {"exec", handle_exec_command, 1, 1},
     {"discard", handle_discard_command, 1, 1},
@@ -58,40 +58,37 @@ static redis_command_t commands[] = {
     {"replconf", handle_replconf_command, 2, -1},
     {"psync", handle_psync_command, 3, -1},
     {"wait", handle_wait_command, 3, 3},
-    {"config",handle_config_get_command, 2 , -1},
+    {"config", handle_config_get_command, 2, -1},
     {"keys", handle_keys_command, 2, 2},
     {"subscribe", handle_subscribe_command, 2, 2},
     {"publish", handle_publish_command, 3, -1},
     {"unsubscribe", handle_unsubscribe_command, 2, -1},
-    {"zadd", handle_zadd_command, 4, -1},     
-    {"zrange", handle_zrange_command, 4, 5},   
-    {"zrem", handle_zrem_command, 3, -1},      
-    {"zcard", handle_zcard_command, 2, 2},     
+    {"zadd", handle_zadd_command, 4, -1},
+    {"zrange", handle_zrange_command, 4, 5},
+    {"zrem", handle_zrem_command, 3, -1},
+    {"zcard", handle_zcard_command, 2, 2},
     {"zscore", handle_zscore_command, 3, 3},
     {"zrank", handle_zrank_command, 3, 3},
 
-    {NULL, NULL, 0, 0} 
-};
+    {NULL, NULL, 0, 0}};
 
 static const char *pubsub_allowed_commands[] = {
     "subscribe",
     "publish",
-    "unsubscribe", 
+    "unsubscribe",
     "psubscribe",
     "punsubscribe",
     "ping",
     "quit",
     "reset",
-    NULL  
-};
-
+    NULL};
 
 void init_command_table(void)
 {
     if (command_table != NULL)
-        return; 
+        return;
 
-    command_table = hash_table_create(32); 
+    command_table = hash_table_create(32);
 
     for (int i = 0; commands[i].name != NULL; i++)
     {
@@ -110,7 +107,6 @@ void init_command_table(void)
 static int extract_timeout(char *timeout);
 static char *build_xread_response_for_blocked_client(redis_server_t *server, client_t *client, const char *stream_key, const char *new_id);
 static void add_command_to_transaction(redis_server_t *server, char *buffer, char **args, int argc, void *client);
-
 
 static int create_rdb_snapshot(redis_db_t *db);
 static int send_rdb_file_to_client(int client_fd, const char *rdb_path);
@@ -152,7 +148,6 @@ static char **parse_command_args(resp_buffer_t *resp_buffer, int *argc)
     return args;
 }
 
-// Free argument array
 static void free_command_args(char **args, int argc)
 {
     if (!args)
@@ -171,7 +166,7 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         return NULL;
 
     client_t *c = (client_t *)client;
-    
+
     resp_buffer_t *resp_buffer = calloc(1, sizeof(resp_buffer_t));
     if (!resp_buffer)
         return NULL;
@@ -194,8 +189,8 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         *p = tolower(*p);
     }
 
-    if (c && c->is_queued && 
-        strcmp(cmd_lower, "exec") != 0 && 
+    if (c && c->is_queued &&
+        strcmp(cmd_lower, "exec") != 0 &&
         strcmp(cmd_lower, "discard") != 0 &&
         strcmp(cmd_lower, "multi") != 0)
     {
@@ -228,19 +223,21 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
         free(resp_buffer);
         return strdup(response);
     }
-       if (c && c->sub_mode) {
-        if (!is_pubsub_command(cmd_lower)) {
+    if (c && c->sub_mode)
+    {
+        if (!is_pubsub_command(cmd_lower))
+        {
             char response[256];
-            snprintf(response, sizeof(response), 
-                    "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n", 
-                    args[0]);
-            
+            snprintf(response, sizeof(response),
+                     "-ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / PING / QUIT / RESET are allowed in this context\r\n",
+                     args[0]);
+
             free_command_args(args, argc);
             free(resp_buffer);
             return strdup(response);
         }
     }
-    
+
     char *response = cmd->handler(server, args, argc, client);
     free(cmd_lower);
     free_command_args(args, argc);
@@ -273,7 +270,7 @@ static long long extract_xread_timeout_ms(char *timeout_str)
     printf("extract_xread_timeout_ms: input='%s' -> %lld ms\n", timeout_str, timeout_ms);
     return timeout_ms;
 }
-// Command handlers
+
 static void check_blocked_clients_for_key(redis_server_t *server, const char *key, const char *notify)
 {
     if (!server || !server->blocked_clients || !key)
@@ -301,7 +298,6 @@ static void check_blocked_clients_for_key(redis_server_t *server, const char *ke
 
                     if (value)
                     {
-                        // Send response to unblocked client
                         char response[1024];
                         snprintf(response, sizeof(response),
                                  "*2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
@@ -358,7 +354,6 @@ static void check_blocked_clients_for_stream(redis_server_t *server, const char 
                 {
                     printf("Found matching stream! Building response...\n");
 
-                    // Build XREAD response for this client
                     char *response = build_xread_response_for_blocked_client(server, blocked_client, key, new_id);
                     if (response)
                     {
@@ -367,7 +362,6 @@ static void check_blocked_clients_for_stream(redis_server_t *server, const char 
 
                         send(blocked_client->fd, response, strlen(response), MSG_NOSIGNAL);
 
-                        // Unblock client
                         client_unblock_stream(blocked_client);
                         remove_client_from_list(server->blocked_clients, blocked_client);
 
@@ -387,7 +381,6 @@ static void check_blocked_clients_for_stream(redis_server_t *server, const char 
     }
 }
 
-// Update command handlers to use server context
 char *handle_echo_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)server;
@@ -400,25 +393,28 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
 {
     (void)server;
     client_t *c = (client_t *)client;
-    if (c && c->sub_mode) {
-        char **response_args = malloc(2 * sizeof(char *));  
-        if (!response_args) {
+    if (c && c->sub_mode)
+    {
+        char **response_args = malloc(2 * sizeof(char *));
+        if (!response_args)
+        {
             return strdup("-ERR out of memory\r\n");
         }
-        
+
         response_args[0] = strdup("pong");
-        response_args[1] = strdup("");  
+        response_args[1] = strdup("");
         char *result = encode_resp_array(response_args, 2);
-        
+
         free(response_args[0]);
         free(response_args[1]);
         free(response_args);
-        
+
         return result;
     }
-    
-    if (argc == 2) {
-        return encode_bulk_string(args[1]);  
+
+    if (argc == 2)
+    {
+        return encode_bulk_string(args[1]);
     }
 
     return encode_simple_string("PONG");
@@ -431,7 +427,6 @@ char *handle_set_command(redis_server_t *server, char **args, int argc, void *cl
     char *value = args[2];
     char *expiry_ms = NULL;
 
-    // Parse optional arguments
     int i = 3;
     while (i < argc)
     {
@@ -454,11 +449,11 @@ char *handle_set_command(redis_server_t *server, char **args, int argc, void *cl
         }
     }
     redis_object_t *obj;
-    if(isInteger(value))
-      obj = redis_object_create_number(value);
+    if (isInteger(value))
+        obj = redis_object_create_number(value);
 
-    else  
-      obj = redis_object_create_string(value);
+    else
+        obj = redis_object_create_string(value);
 
     if (expiry_ms)
     {
@@ -496,8 +491,6 @@ char *handle_get_command(redis_server_t *server, char **args, int argc, void *cl
     return encode_bulk_string((char *)obj->ptr);
 }
 
-// LPUSH with blocking client notification
-// In redis_command_handler.c - Fix RPUSH
 char *handle_rpush_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)client;
@@ -556,7 +549,6 @@ char *handle_lpush_command(redis_server_t *server, char **args, int argc, void *
         list_lpush(list, strdup(args[i]));
     }
 
-    // Get the length BEFORE checking blocked clients
     size_t list_len = list_length(list);
 
     // Check if any clients are blocked on this key
@@ -568,9 +560,7 @@ char *handle_lpush_command(redis_server_t *server, char **args, int argc, void *
     return strdup(response);
 }
 
-// BLPOP implementation
-// In handle_blpop_command - Fix timeout parsing
-// In handle_blpop_command - Simple fix without ceil()
+
 char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *client)
 {
     if (!client || !server)
@@ -580,16 +570,13 @@ char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *
 
     client_t *c = (client_t *)client;
 
-    // Parse timeout as milliseconds
     long long timeout_ms = extract_blpop_timeout_ms(args[argc - 1]);
 
-    // Check if client is already blocked
     if (c->is_blocked)
     {
         return strdup("-ERR client already blocked\r\n");
     }
 
-    // Try each key (except last arg which is timeout)
     for (int i = 1; i < argc - 1; i++)
     {
         char *key = args[i];
@@ -615,7 +602,6 @@ char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *
         }
     }
 
-    // No keys have values - block the client with millisecond precision
     long long current_time_ms = get_current_time_ms();
     long long timeout_timestamp_ms = 0;
 
@@ -638,7 +624,6 @@ char *handle_blpop_command(redis_server_t *server, char **args, int argc, void *
     return NULL; // No response - client is blocked
 }
 
-// Other command handlers remain similar, just update signature...
 char *handle_llen_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)argc;
@@ -833,7 +818,6 @@ void check_blocked_clients_timeout(redis_server_t *server)
         }
         else if (client->blocked_key && !client->stream_block)
         {
-            // Handle list blocking - check if data is available
             redis_object_t *obj = hash_table_get(server->db->dict, client->blocked_key);
             if (obj && obj->type == REDIS_LIST)
             {
@@ -893,7 +877,6 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
 
     size_t field_count = (argc - 3) / 2;
 
-    // Extract field names and values
     const char **field_names = malloc(field_count * sizeof(char *));
     const char **field_values = malloc(field_count * sizeof(char *));
 
@@ -916,7 +899,6 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
 
     if (!obj)
     {
-        // Create new stream
         stream = redis_stream_create();
         if (!stream)
         {
@@ -925,7 +907,6 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
             return strdup("-ERR failed to create stream\r\n");
         }
 
-        // Create redis object wrapper
         obj = redis_object_create_stream(stream);
         if (!obj)
         {
@@ -935,12 +916,10 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
             return strdup("-ERR failed to create stream object\r\n");
         }
 
-        // Store in database
         hash_table_set(server->db->dict, strdup(key), obj);
     }
     else
     {
-        // Check if it's a stream
         if (obj->type != REDIS_STREAM)
         {
             free(field_names);
@@ -950,7 +929,6 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
         stream = (redis_stream_t *)obj->ptr;
     }
 
-    // Add entry to stream
     int error_code = 0;
     char *generated_id = redis_stream_add(stream, id, field_names, field_values, field_count, &error_code);
 
@@ -959,7 +937,6 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
 
     if (!generated_id)
     {
-        // Return specific error message based on error code
         switch (error_code)
         {
         case 1:
@@ -979,10 +956,8 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
         }
     }
 
-    // Return the generated ID
     char *response = encode_bulk_string(generated_id);
 
-    /*check if any clients are blocked on this stream , if so send the new entry*/
     check_blocked_clients_for_stream(server, key, generated_id);
 
     free(generated_id);
@@ -995,11 +970,8 @@ static int extract_timeout(char *timeout_st)
     int timeout_seconds;
 
     printf("extract_timeout: input='%s', parsed=%f milliseconds\n", timeout_st, timeout_float);
-
-    // Convert milliseconds to seconds
     double timeout_sec_float = timeout_float / 1000.0;
 
-    // Handle fractional seconds
     if (timeout_sec_float == 0.0)
     {
         timeout_seconds = 0; // Wait forever
@@ -1035,7 +1007,6 @@ char *handle_xrange_command(redis_server_t *server, char **args, int argc, void 
     char *start_id = args[2];
     char *end_id = args[3];
 
-    // Get stream from database
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
     if (!obj)
     {
@@ -1048,8 +1019,6 @@ char *handle_xrange_command(redis_server_t *server, char **args, int argc, void 
     }
 
     redis_stream_t *stream = (redis_stream_t *)obj->ptr;
-
-    // Get range results from radix tree
     void **raw_results = NULL;
     int result_count = 0;
 
@@ -1061,7 +1030,6 @@ char *handle_xrange_command(redis_server_t *server, char **args, int argc, void 
         return strdup("*0\r\n");
     }
 
-    // Build RESP response manually for the expected format
     size_t response_size = 1024;
     char *response = malloc(response_size);
     int pos = 0;
@@ -1072,26 +1040,18 @@ char *handle_xrange_command(redis_server_t *server, char **args, int argc, void 
     {
         stream_entry_t *entry = (stream_entry_t *)raw_results[i];
 
-        // Each entry is [ID, [field1, value1, field2, value2, ...]]
         pos += sprintf(response + pos, "*2\r\n");
-
-        // Add ID as bulk string
         pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(entry->id), entry->id);
-
-        // Add fields as array
         pos += sprintf(response + pos, "*%zu\r\n", entry->field_count * 2);
 
         for (size_t j = 0; j < entry->field_count; j++)
         {
-            // Field name
             pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
                            strlen(entry->fields[j].name), entry->fields[j].name);
-            // Field value
             pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
                            strlen(entry->fields[j].value), entry->fields[j].value);
         }
 
-        // Reallocate if needed
         if (pos > response_size - 1000)
         {
             response_size *= 2;
@@ -1115,18 +1075,15 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         return strdup("-ERR wrong number of arguments for 'xread' command\r\n");
     }
 
-    // Check if client is already blocked
     if (c->is_blocked && (c->stream_block || c->blocked_key))
     {
         printf("Client fd=%d is already blocked\n", c->fd);
         return strdup("-ERR client already blocked\r\n");
     }
 
-    // In handle_xread_command, replace the timeout parsing:
     long long timeout_ms = -1;
     bool is_blocking = false;
 
-    // Parse BLOCK parameter
     for (int i = 0; i < argc; i++)
     {
         if (strcasecmp(args[i], "block") == 0 && i + 1 < argc)
@@ -1138,9 +1095,8 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
             break;
         }
     }
-    // ... existing code for finding STREAMS and parsing arguments ...
 
-    // Find STREAMS keyword
+ 
     int streams_pos = -1;
     for (int i = 1; i < argc; i++)
     {
@@ -1156,7 +1112,6 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         return strdup("-ERR syntax error\r\n");
     }
 
-    // Calculate number of streams
     int remaining_args = argc - streams_pos - 1;
     if (remaining_args % 2 != 0)
     {
@@ -1169,16 +1124,13 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         return strdup("-ERR wrong number of arguments for 'xread' command\r\n");
     }
 
-    // Extract stream names and start IDs
     char **stream_keys = &args[streams_pos + 1];
     char **start_ids = &args[streams_pos + 1 + num_streams];
 
-    // Build response - first count streams with data
     int streams_with_data = 0;
     void ***all_results = malloc(num_streams * sizeof(void **));
     int *all_counts = malloc(num_streams * sizeof(int));
 
-    // Get results for each stream
     for (int i = 0; i < num_streams; i++)
     {
         all_results[i] = NULL;
@@ -1192,7 +1144,6 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
 
         redis_stream_t *stream = (redis_stream_t *)obj->ptr;
 
-        // Get entries AFTER start_id (exclusive)
         char next_id[64];
         if (get_next_stream_id(start_ids[i], next_id, sizeof(next_id)) == 0)
         {
@@ -1208,7 +1159,6 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
 
     printf("XREAD: is_blocking=%d, streams_with_data=%d\n", is_blocking, streams_with_data);
 
-    // If blocking and no data, block the client
     if (is_blocking && streams_with_data == 0)
     {
         long long current_time_ms = get_current_time_ms();
@@ -1224,7 +1174,6 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         printf("Blocking client fd=%d on XREAD for %lld ms (until %lld)\n",
                c->fd, timeout_ms, timeout_timestamp_ms);
 
-        // Store XREAD command info in client for later processing
         c->xread_streams = malloc(num_streams * sizeof(char *));
         c->xread_start_ids = malloc(num_streams * sizeof(char *));
         c->xread_num_streams = num_streams;
@@ -1235,13 +1184,11 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
             c->xread_start_ids[i] = strdup(start_ids[i]);
         }
 
-        // Use millisecond timeout for XREAD
         c->block_timeout_ms = timeout_timestamp_ms;
         c->stream_block = true;
         c->is_blocked = true;
         add_client_to_list(server->blocked_clients, c);
 
-        // Cleanup
         for (int i = 0; i < num_streams; i++)
         {
             free(all_results[i]);
@@ -1249,12 +1196,11 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         free(all_results);
         free(all_counts);
 
-        return NULL; // No response - client is blocked
+        return NULL;
     }
 
     if (streams_with_data == 0)
     {
-        // Cleanup and return empty
         for (int i = 0; i < num_streams; i++)
         {
             free(all_results[i]);
@@ -1264,7 +1210,6 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         return strdup("*0\r\n");
     }
 
-    // Build RESP response manually (same as before)
     size_t response_size = 4096;
     char *response = malloc(response_size);
     int pos = 0;
@@ -1276,7 +1221,6 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         if (all_counts[i] == 0)
             continue;
 
-        // Stream entry: [stream_name, [entries]]
         pos += sprintf(response + pos, "*2\r\n");
         pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(stream_keys[i]), stream_keys[i]);
         pos += sprintf(response + pos, "*%d\r\n", all_counts[i]);
@@ -1304,7 +1248,6 @@ char *handle_xread_command(redis_server_t *server, char **args, int argc, void *
         }
     }
 
-    // Cleanup
     for (int i = 0; i < num_streams; i++)
     {
         free(all_results[i]);
@@ -1322,7 +1265,6 @@ static char *build_xread_response_for_blocked_client(redis_server_t *server, cli
         return NULL;
     }
 
-    // Get the stream
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, stream_key);
     if (!obj || obj->type != REDIS_STREAM)
     {
@@ -1331,45 +1273,29 @@ static char *build_xread_response_for_blocked_client(redis_server_t *server, cli
 
     redis_stream_t *stream = (redis_stream_t *)obj->ptr;
 
-    // Get the specific entry that was just added
     stream_entry_t *entry = (stream_entry_t *)radix_search(stream->entries_tree, (char *)new_id, strlen(new_id));
     if (!entry)
     {
         return NULL;
     }
 
-    // Build RESP response: [[stream_name, [[entry_id, [field1, value1, ...]]]]]
     size_t response_size = 1024;
     char *response = malloc(response_size);
     int pos = 0;
 
-    // Outer array with 1 stream
     pos += sprintf(response + pos, "*1\r\n");
-
-    // Stream entry: [stream_name, [entries]]
     pos += sprintf(response + pos, "*2\r\n");
-
-    // Add stream name
     pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(stream_key), stream_key);
 
-    // Add entries array (1 entry)
     pos += sprintf(response + pos, "*1\r\n");
-
-    // The entry: [ID, [field1, value1, field2, value2, ...]]
     pos += sprintf(response + pos, "*2\r\n");
-
-    // Add ID
     pos += sprintf(response + pos, "$%zu\r\n%s\r\n", strlen(entry->id), entry->id);
-
-    // Add fields array
     pos += sprintf(response + pos, "*%zu\r\n", entry->field_count * 2);
 
     for (size_t i = 0; i < entry->field_count; i++)
     {
-        // Field name
         pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
                        strlen(entry->fields[i].name), entry->fields[i].name);
-        // Field value
         pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
                        strlen(entry->fields[i].value), entry->fields[i].value);
     }
@@ -1380,60 +1306,60 @@ char *handle_incr_command(redis_server_t *server, char **args, int argc, void *c
 {
     (void)argc;
     (void)client;
-    
+
     char *key = args[1];
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
-    
-    if (!obj) {
-        // Key doesn't exist - create as number starting at 1
+
+    if (!obj)
+    {
         obj = redis_object_create_number("1");
         hash_table_set(server->db->dict, strdup(key), obj);
         return encode_number(strdup("1"));
     }
-    
-    if (obj->type != REDIS_NUMBER) {
+
+    if (obj->type != REDIS_NUMBER)
+    {
         return strdup("-ERR value is not an integer or out of range\r\n");
     }
-    
+
     char *value = (char *)obj->ptr;
     long long num = atoll(value);
-    
+
     num++;
-    
+
     char new_value[32];
     snprintf(new_value, sizeof(new_value), "%lld", num);
-    
-    free(obj->ptr);  // Free old string
-    obj->ptr = strdup(new_value);  // Store new string
-    
+
+    free(obj->ptr);               
+    obj->ptr = strdup(new_value); 
+
     return encode_number(strdup(new_value));
 }
 
 char *handle_multi_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    client_t *c = (client_t *) client;
-    if(!c)
-      return NULL;
+    client_t *c = (client_t *)client;
+    if (!c)
+        return NULL;
 
     c->transaction_commands = list_create();
-    if(!c->transaction_commands)
-      return NULL;
+    if (!c->transaction_commands)
+        return NULL;
     c->is_queued = 1;
-    
+
     return encode_simple_string("OK");
 }
 
 static void add_command_to_transaction(redis_server_t *server, char *buffer, char **args, int argc, void *client)
 {
     (void)server;
-    (void)args;  // Don't need parsed args
-    (void)argc;  // Don't need arg count
-    
+    (void)args; 
+    (void)argc; 
+
     client_t *c = (client_t *)client;
     if (!c || !c->transaction_commands)
         return;
-    
-    // Just store the raw command buffer - much simpler!
+
     list_rpush(c->transaction_commands, strdup(buffer));
 }
 
@@ -1441,61 +1367,64 @@ char *handle_exec_command(redis_server_t *server, char **args, int argc, void *c
 {
     (void)args;
     (void)argc;
-    
+
     client_t *c = (client_t *)client;
-    if (!c || !c->is_queued || !c->transaction_commands) {
+    if (!c || !c->is_queued || !c->transaction_commands)
+    {
         return strdup("-ERR EXEC without MULTI\r\n");
     }
-    
+
     size_t command_count = list_length(c->transaction_commands);
-    
-    if (command_count == 0) {
+
+    if (command_count == 0)
+    {
         cleanup_transaction(c);
         return strdup("*0\r\n");
     }
-    
+
     char **responses = calloc(command_count, sizeof(char *));
-    if (!responses) {
+    if (!responses)
+    {
         cleanup_transaction(c);
         return strdup("-ERR out of memory\r\n");
     }
-    
-    // Temporarily disable transaction mode
+
     c->is_queued = 0;
-    
-    // Execute each stored command buffer
+
     list_node_t *node = c->transaction_commands->head;
-    for (size_t i = 0; i < command_count && node; i++) {
+    for (size_t i = 0; i < command_count && node; i++)
+    {
         char *command_buffer = (char *)node->data;
-        
-        // Let handle_command do all the parsing and execution
+
         responses[i] = handle_command(server, command_buffer, client);
-        
-        if (!responses[i]) {
+
+        if (!responses[i])
+        {
             responses[i] = strdup("+OK\r\n");
         }
-        
+
         node = node->next;
     }
-    
-    // Build RESP array response
+
     size_t total_size = 64;
-    for (size_t i = 0; i < command_count; i++) {
+    for (size_t i = 0; i < command_count; i++)
+    {
         total_size += strlen(responses[i]);
     }
-    
+
     char *final_response = malloc(total_size);
     int pos = sprintf(final_response, "*%zu\r\n", command_count);
-    
-    for (size_t i = 0; i < command_count; i++) {
+
+    for (size_t i = 0; i < command_count; i++)
+    {
         strcpy(final_response + pos, responses[i]);
         pos += strlen(responses[i]);
         free(responses[i]);
     }
-    
+
     free(responses);
     cleanup_transaction(c);
-    
+
     return final_response;
 }
 
@@ -1504,13 +1433,13 @@ char *handle_discard_command(redis_server_t *server, char **args, int argc, void
     (void)server;
     (void)args;
     (void)argc;
-    
+
     client_t *c = (client_t *)client;
     if (!c || !c->is_queued)
     {
         return strdup("-ERR DISCARD without MULTI\r\n");
     }
-    
+
     cleanup_transaction(c);
     return strdup("+OK\r\n");
 }
@@ -1520,106 +1449,124 @@ char *handle_info_command(redis_server_t *server, char **args, int argc, void *c
     (void)client;
     (void)args;
     (void)argc;
-    
-    if (!server->replication_info) {
+
+    if (!server->replication_info)
+    {
         return strdup("-ERR server not configured\r\n");
     }
-    
+
     char info_buffer[256];
     int offset = 0;
-    if (server->replication_info->role == MASTER) {
+    if (server->replication_info->role == MASTER)
+    {
         offset += snprintf(info_buffer + offset, sizeof(info_buffer) - offset,
-            "role:master\r\nconnected_slaves:%d",
-            server->replication_info->connected_slaves);
-    } else if (server->replication_info->role == SLAVE) {
+                           "role:master\r\nconnected_slaves:%d",
+                           server->replication_info->connected_slaves);
+    }
+    else if (server->replication_info->role == SLAVE)
+    {
         offset += snprintf(info_buffer + offset, sizeof(info_buffer) - offset,
-            "role:slave\r\nmaster_host:%s\r\nmaster_port:%d",
-            server->replication_info->master_host ? server->replication_info->master_host : "unknown",
-            server->replication_info->master_port);
-    } else {
+                           "role:slave\r\nmaster_host:%s\r\nmaster_port:%d",
+                           server->replication_info->master_host ? server->replication_info->master_host : "unknown",
+                           server->replication_info->master_port);
+    }
+    else
+    {
         return strdup("-ERR unknown role\r\n");
     }
-    if(server->replication_info->replication_id && server->replication_info->master_repl_offset >=0)
+    if (server->replication_info->replication_id && server->replication_info->master_repl_offset >= 0)
     {
-      offset += snprintf(info_buffer + offset, sizeof(info_buffer) - offset, "\r\nmaster_replid:%s\r\nmaster_repl_offset:%d",server->replication_info->replication_id, 
-        server->replication_info->master_repl_offset);
+        offset += snprintf(info_buffer + offset, sizeof(info_buffer) - offset, "\r\nmaster_replid:%s\r\nmaster_repl_offset:%d", server->replication_info->replication_id,
+                           server->replication_info->master_repl_offset);
     }
-   
+
     return encode_bulk_string(info_buffer);
 }
 
 char *handle_replconf_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if (argc < 3) {
+    if (argc < 3)
+    {
         return strdup("-ERR wrong number of arguments for 'replconf' command\r\n");
     }
-    
-    if (strcasecmp(args[1], "getack") == 0) {
-        if (server->replication_info && server->replication_info->role == SLAVE) {
+
+    if (strcasecmp(args[1], "getack") == 0)
+    {
+        if (server->replication_info && server->replication_info->role == SLAVE)
+        {
             char offset_str[32];
             snprintf(offset_str, sizeof(offset_str), "%lu", server->replication_info->replica_offset);
             int offset_digits = snprintf(NULL, 0, "%lu", server->replication_info->replica_offset);
-            
+
             char response[256];
-            snprintf(response, sizeof(response), 
-                    "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
-                    offset_digits, offset_str);
-            
+            snprintf(response, sizeof(response),
+                     "*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n$%d\r\n%s\r\n",
+                     offset_digits, offset_str);
+
             printf("Sending ACK with offset: %lu\n", server->replication_info->replica_offset);
             return strdup(response);
-        } else {
+        }
+        else
+        {
             return strdup("-ERR GETACK can only be sent to replicas\r\n");
         }
     }
-    
-    // Handle REPLCONF ACK (sent by replica to master)
-    else if (strcasecmp(args[1], "ack") == 0) {
-        if (server->replication_info && server->replication_info->role == MASTER) {
-            if (argc < 3) {
+
+    else if (strcasecmp(args[1], "ack") == 0)
+    {
+        if (server->replication_info && server->replication_info->role == MASTER)
+        {
+            if (argc < 3)
+            {
                 return strdup("-ERR wrong number of arguments for 'replconf ack' command\r\n");
             }
-            
+
             client_t *c = (client_t *)client;
             uint64_t ack_offset = strtoull(args[2], NULL, 10);
-            
+
             // Find which replica this is and update its ACK offset
-            for (int i = 0; i < MAX_REPLICAS; i++) {
-                if (server->replication_info->replicas_fd[i] == c->fd) {
+            for (int i = 0; i < MAX_REPLICAS; i++)
+            {
+                if (server->replication_info->replicas_fd[i] == c->fd)
+                {
                     server->replication_info->replica_ack_offsets[i] = ack_offset;
-                    printf("Updated replica %d (fd=%d) ACK offset to %lu\n", 
+                    printf("Updated replica %d (fd=%d) ACK offset to %lu\n",
                            i, c->fd, ack_offset);
-                    check_wait_completion(server);       
+                    check_wait_completion(server);
                     break;
                 }
-                
             }
-            
-            return NULL; // No response needed
-        } else {
+
+            return NULL; 
+        }
+        else
+        {
             return strdup("-ERR ACK can only be sent to masters\r\n");
         }
     }
-    
-    // Handle REPLCONF listening-port (sent by replica to master during handshake)
-    else if (strcasecmp(args[1], "listening-port") == 0) {
-        if (server->replication_info && server->replication_info->role == MASTER) {
+
+    else if (strcasecmp(args[1], "listening-port") == 0)
+    {
+        if (server->replication_info && server->replication_info->role == MASTER)
+        {
             client_t *c = (client_t *)client;
             add_replica(server, c->fd);
             return encode_simple_string("OK");
         }
         return NULL;
     }
-    
-    // Handle REPLCONF capa (sent by replica to master during handshake)
-    else if (strcasecmp(args[1], "capa") == 0) {
-        if (server->replication_info && server->replication_info->role == MASTER) {
+
+    else if (strcasecmp(args[1], "capa") == 0)
+    {
+        if (server->replication_info && server->replication_info->role == MASTER)
+        {
             // For now, just acknowledge the capability
             printf("Received replica capability: %s\n", argc > 2 ? args[2] : "unknown");
             return encode_simple_string("OK");
         }
         return strdup("-ERR CAPA can only be sent to masters\r\n");
     }
-    
+
     return strdup("-ERR unknown REPLCONF option\r\n");
 }
 
@@ -1627,137 +1574,148 @@ char *handle_psync_command(redis_server_t *server, char **args, int argc, void *
 {
     char buffer[PSYNC_RESPONSE_SIZE];
     int offset = 0;
-    
-    if (strcmp(args[1], "?") == 0) {
-        // Send FULLRESYNC response first
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, 
-                          "FULLRESYNC %s %d", 
-                          server->replication_info->replication_id,
-                          server->replication_info->master_repl_offset);
-        
+
+    if (strcmp(args[1], "?") == 0)
+    {
+        offset += snprintf(buffer + offset, sizeof(buffer) - offset,
+                           "FULLRESYNC %s %d",
+                           server->replication_info->replication_id,
+                           server->replication_info->master_repl_offset);
+
         client_t *client_conn = (client_t *)client;
-        int client_fd = client_conn->fd; 
-        
-        int rdb_fd = create_rdb_snapshot(server->db); 
-        if (rdb_fd == -1) {
+        int client_fd = client_conn->fd;
+
+        int rdb_fd = create_rdb_snapshot(server->db);
+        if (rdb_fd == -1)
+        {
             return encode_simple_string("ERR Failed to create RDB snapshot");
         }
-        close(rdb_fd); 
-        
+        close(rdb_fd);
+
         char *response = encode_simple_string(buffer);
-        
+
         write(client_fd, response, strlen(response));
         free(response);
-        
-        if (send_rdb_file_to_client(client_fd, RDB_TEMP_FILE) == -1) {
+
+        if (send_rdb_file_to_client(client_fd, RDB_TEMP_FILE) == -1)
+        {
             unlink(RDB_TEMP_FILE);
-            return NULL; 
+            return NULL;
         }
-        
-        if (rename_rdb_file(RDB_TEMP_FILE, RDB_DEFAULT_FILE) == 0) {
+
+        if (rename_rdb_file(RDB_TEMP_FILE, RDB_DEFAULT_FILE) == 0)
+        {
             printf("RDB snapshot successfully saved as %s\n", RDB_DEFAULT_FILE);
-        } else {
+        }
+        else
+        {
             fprintf(stderr, "Warning: Failed to rename RDB file to main file, cleaning up temp file\n");
             unlink(RDB_TEMP_FILE);
         }
-        
-        return NULL; 
+
+        return NULL;
     }
-    
+
     return encode_simple_string("ERR Invalid PSYNC arguments");
 }
 char *handle_wait_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if (argc != 3) {
+    if (argc != 3)
+    {
         return strdup("-ERR wrong number of arguments for 'wait' command\r\n");
     }
-    
-    if (server->replication_info->role != MASTER) {
+
+    if (server->replication_info->role != MASTER)
+    {
         return strdup("-ERR WAIT can only be used on masters\r\n");
     }
-    
+
     int expected_replicas = atoi(args[1]);
     int timeout_ms = atoi(args[2]);
-    
+
     printf("WAIT command: expecting %d replicas, timeout %d ms\n", expected_replicas, timeout_ms);
-    
-    // If no replicas connected, return 0 immediately
-    if (server->replication_info->connected_slaves == 0) {
+
+    if (server->replication_info->connected_slaves == 0)
+    {
         return strdup(":0\r\n");
     }
-    
+
     uint64_t current_offset = server->replication_info->master_repl_offset;
-    
-    // If offset is 0, all replicas are already synced
-    if (current_offset == 0) {
+
+    if (current_offset == 0)
+    {
         int synced_replicas = server->replication_info->connected_slaves;
         char response[32];
         sprintf(response, ":%d\r\n", synced_replicas);
         return strdup(response);
     }
-    
-    // Check if enough replicas are already synced
+
     int already_acked = 0;
-    for (int i = 0; i < MAX_REPLICAS; i++) {
-        if (server->replication_info->replicas_fd[i] != -1 && 
-            server->replication_info->replica_ack_offsets[i] >= current_offset) {
+    for (int i = 0; i < MAX_REPLICAS; i++)
+    {
+        if (server->replication_info->replicas_fd[i] != -1 &&
+            server->replication_info->replica_ack_offsets[i] >= current_offset)
+        {
             already_acked++;
         }
     }
-    
-    if (already_acked >= expected_replicas) {
+
+    if (already_acked >= expected_replicas)
+    {
         char response[32];
         sprintf(response, ":%d\r\n", already_acked);
         return strdup(response);
     }
-    
-    // Set up non-blocking wait
+
     server->pending_wait.client = (client_t *)client;
     server->pending_wait.expected_replicas = expected_replicas;
     server->pending_wait.target_offset = current_offset;
     server->pending_wait.start_time = get_current_time_ms();
     server->pending_wait.timeout_ms = timeout_ms;
     server->pending_wait.active = 1;
-    
-    // Send GETACK to all replicas
+
     char getack_cmd[] = "*3\r\n$8\r\nREPLCONF\r\n$6\r\nGETACK\r\n$1\r\n*\r\n";
-    for (int i = 0; i < MAX_REPLICAS; i++) {
-        if (server->replication_info->replicas_fd[i] != -1) {
+    for (int i = 0; i < MAX_REPLICAS; i++)
+    {
+        if (server->replication_info->replicas_fd[i] != -1)
+        {
             send(server->replication_info->replicas_fd[i], getack_cmd, strlen(getack_cmd), MSG_NOSIGNAL);
             printf("Sent GETACK to replica fd=%d\n", server->replication_info->replicas_fd[i]);
         }
     }
-    
+
     return NULL;
 }
 
 static int create_rdb_snapshot(redis_db_t *db)
 {
     int fd = open(RDB_TEMP_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (fd == -1) {
+    if (fd == -1)
+    {
         perror("Failed to create RDB file");
         return -1;
     }
 
     io_buffer buffer;
     buffer_init_with_fd(&buffer, fd);
-    
+
     ssize_t bytes_written = rdb_save_database(&buffer, db);
-    if (bytes_written == -1) {
+    if (bytes_written == -1)
+    {
         perror("Failed to save RDB database");
         close(fd);
         unlink(RDB_TEMP_FILE);
         return -1;
     }
-    
-    // Flush any remaining buffered data
-    if (!buffer_flush(&buffer)) {
+
+    if (!buffer_flush(&buffer))
+    {
         perror("Failed to flush RDB buffer");
         close(fd);
         unlink(RDB_TEMP_FILE);
         return -1;
     }
-    
+
     printf("RDB snapshot created successfully: %zd bytes written to %s\n", bytes_written, RDB_TEMP_FILE);
     return fd;
 }
@@ -1765,353 +1723,390 @@ static int create_rdb_snapshot(redis_db_t *db)
 static int send_rdb_file_to_client(int client_fd, const char *rdb_path)
 {
     long file_size = get_file_size_stat(rdb_path);
-    if (file_size == -1) {
+    if (file_size == -1)
+    {
         fprintf(stderr, "Failed to get RDB file size\n");
         return -1;
     }
-    
+
     char header[64];
     int header_len = snprintf(header, sizeof(header), "$%ld\r\n", file_size);
-    
-    if (write(client_fd, header, header_len) != header_len) {
+
+    if (write(client_fd, header, header_len) != header_len)
+    {
         perror("Failed to send RDB header to client");
         return -1;
     }
-    
-    // Open RDB file for reading
+
     FILE *rdb_file = fopen(rdb_path, "rb");
-    if (!rdb_file) {
+    if (!rdb_file)
+    {
         perror("Failed to open RDB file for reading");
         return -1;
     }
-    
-    // Send file contents in chunks
+
     char file_buffer[8192];
     size_t bytes_read;
-    
-    while ((bytes_read = fread(file_buffer, 1, sizeof(file_buffer), rdb_file)) > 0) {
+
+    while ((bytes_read = fread(file_buffer, 1, sizeof(file_buffer), rdb_file)) > 0)
+    {
         ssize_t bytes_written = write(client_fd, file_buffer, bytes_read);
-        if (bytes_written != (ssize_t)bytes_read) {
+        if (bytes_written != (ssize_t)bytes_read)
+        {
             perror("Failed to send RDB data to client");
             fclose(rdb_file);
             return -1;
         }
     }
-    
+
     fclose(rdb_file);
-    
+
     printf("Successfully sent RDB file to replica: %zu bytes\n");
     return 0;
 }
 
 static int rename_rdb_file(const char *temp_path, const char *main_path)
 {
-    // First, backup existing main RDB file if it exists
     char backup_path[256];
     snprintf(backup_path, sizeof(backup_path), "%s.bak", main_path);
-    
-    // Check if main file exists
-    if (access(main_path, F_OK) == 0) {
-        // Remove old backup if it exists
-        if (access(backup_path, F_OK) == 0) {
-            if (unlink(backup_path) != 0) {
+
+    if (access(main_path, F_OK) == 0)
+    {
+        if (access(backup_path, F_OK) == 0)
+        {
+            if (unlink(backup_path) != 0)
+            {
                 perror("Warning: Failed to remove old backup file");
             }
         }
-        
-        // Create backup of current main file
-        if (rename(main_path, backup_path) != 0) {
+
+        if (rename(main_path, backup_path) != 0)
+        {
             perror("Warning: Failed to backup existing RDB file");
-            // Continue anyway, but warn user
-        } else {
+        }
+        else
+        {
             printf("Backed up existing %s to %s\n", main_path, backup_path);
         }
     }
-    
-    // Rename temp file to main file
-    if (rename(temp_path, main_path) != 0) {
+
+    if (rename(temp_path, main_path) != 0)
+    {
         perror("Failed to rename temp RDB file to main file");
-        
-        // Try to restore backup if rename failed and backup exists
-        if (access(backup_path, F_OK) == 0) {
-            if (rename(backup_path, main_path) == 0) {
+
+        if (access(backup_path, F_OK) == 0)
+        {
+            if (rename(backup_path, main_path) == 0)
+            {
                 printf("Restored backup file to %s\n", main_path);
-            } else {
+            }
+            else
+            {
                 fprintf(stderr, "Critical: Failed to restore backup file!\n");
             }
         }
         return -1;
     }
-    
-    // Successfully renamed, remove backup after a successful operation
-    if (access(backup_path, F_OK) == 0) {
-        if (unlink(backup_path) != 0) {
+
+    if (access(backup_path, F_OK) == 0)
+    {
+        if (unlink(backup_path) != 0)
+        {
             perror("Warning: Failed to remove backup file after successful rename");
-        } else {
+        }
+        else
+        {
             printf("Removed backup file %s after successful RDB update\n", backup_path);
         }
     }
-    
+
     return 0;
 }
 
 static long get_file_size_stat(const char *filepath)
 {
     struct stat st;
-    if (stat(filepath, &st) == 0) {
+    if (stat(filepath, &st) == 0)
+    {
         return st.st_size;
     }
     perror("Failed to stat file");
     return -1;
 }
 
-int add_replica(redis_server_t *server, int replica_fd) {
-    if (!server || !server->replication_info || server->replication_info->role != MASTER) {
+int add_replica(redis_server_t *server, int replica_fd)
+{
+    if (!server || !server->replication_info || server->replication_info->role != MASTER)
+    {
         return -1;
     }
-    
+
     replication_info_t *repl_info = server->replication_info;
-    
-    // Check if already registered
-    for (int i = 0; i < repl_info->connected_slaves; i++) {
-        if (repl_info->replicas_fd[i] == replica_fd) {
-            return 0;  // Already registered
+
+    for (int i = 0; i < repl_info->connected_slaves; i++)
+    {
+        if (repl_info->replicas_fd[i] == replica_fd)
+        {
+            return 0; 
         }
     }
-    
-    // Find empty slot
-    for (int i = 0; i < MAX_REPLICAS; i++) {
-        if (repl_info->replicas_fd[i] == -1) {  // Empty slot
+
+    for (int i = 0; i < MAX_REPLICAS; i++)
+    {
+        if (repl_info->replicas_fd[i] == -1)
+        { 
             repl_info->replicas_fd[i] = replica_fd;
             repl_info->connected_slaves++;
-            printf("Added replica fd %d, total replicas: %d\n", 
+            printf("Added replica fd %d, total replicas: %d\n",
                    replica_fd, repl_info->connected_slaves);
             return 0;
         }
     }
-    
-    return -1;  // No empty slots
-}
 
+    return -1; 
+}
 
 char *handle_config_get_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if (argc < 3) {
+    if (argc < 3)
+    {
         return strdup("-ERR wrong number of arguments for 'config get' command\r\n");
     }
-    
-    if (strcmp(args[1], "get") == 0) {
+
+    if (strcmp(args[1], "get") == 0)
+    {
         char *param = args[2];
-        
-        char **response_args = malloc(2 * sizeof(char*));
-        if (!response_args) {
+
+        char **response_args = malloc(2 * sizeof(char *));
+        if (!response_args)
+        {
             return strdup(RESP_MEMORY_ERROR);
         }
-        
-        response_args[0] = strdup(param);  
-        
-        if (strcmp(param, "dir") == 0) {
-            response_args[1] = strdup(server->rdb_dir);  
+
+        response_args[0] = strdup(param);
+
+        if (strcmp(param, "dir") == 0)
+        {
+            response_args[1] = strdup(server->rdb_dir);
         }
-        else if (strcmp(param, "dbfilename") == 0) {
-            response_args[1] = strdup(server->rdb_dir);  
+        else if (strcmp(param, "dbfilename") == 0)
+        {
+            response_args[1] = strdup(server->rdb_dir);
         }
-        else {
+        else
+        {
             free(response_args[0]);
             free(response_args);
-            return encode_resp_array(NULL, 0);  
+            return encode_resp_array(NULL, 0);
         }
-        
+
         char *result = encode_resp_array(response_args, 2);
-        
+
         free(response_args[0]);
         free(response_args[1]);
         free(response_args);
-        
+
         return result;
     }
-    
+
     return strdup("-ERR unknown CONFIG subcommand\r\n");
 }
 
 char *handle_keys_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if (argc != 2) {
+    if (argc != 2)
+    {
         return strdup("-ERR wrong number of arguments for 'keys' command\r\n");
     }
-    
+
     char *pattern = args[1];
-    
-    // For now, only support "*" pattern (all keys)
-    if (strcmp(pattern, "*") != 0) {
-        // For unsupported patterns, return empty array
+
+    if (strcmp(pattern, "*") != 0)
+    {
         return strdup("*0\r\n");
     }
-    
-    // Get all keys from the database
+
     hash_table_iterator_t *iter = hash_table_iterator_create(server->db->dict);
-    if (!iter) {
+    if (!iter)
+    {
         return strdup("*0\r\n");
     }
-    
-    // Count keys first
+
     int key_count = 0;
     char *key;
     void *value;
-    
-    while (hash_table_iterator_next(iter, &key, &value)) {
+
+    while (hash_table_iterator_next(iter, &key, &value))
+    {
         key_count++;
     }
-    
-    if (key_count == 0) {
+
+    if (key_count == 0)
+    {
         hash_table_iterator_destroy(iter);
         return strdup("*0\r\n");
     }
-    
+
     // Collect all keys
-    char **keys_array = malloc(key_count * sizeof(char*));
-    if (!keys_array) {
+    char **keys_array = malloc(key_count * sizeof(char *));
+    if (!keys_array)
+    {
         hash_table_iterator_destroy(iter);
         return strdup("-ERR out of memory\r\n");
     }
-    
-    // Reset iterator and collect keys
+
     hash_table_iterator_destroy(iter);
     iter = hash_table_iterator_create(server->db->dict);
-    
+
     int i = 0;
-    while (hash_table_iterator_next(iter, &key, &value) && i < key_count) {
-        keys_array[i] = key;  // Use the key directly from the hash table
+    while (hash_table_iterator_next(iter, &key, &value) && i < key_count)
+    {
+        keys_array[i] = key; 
         i++;
     }
-    
-    // Encode as RESP array
+
     char *response = encode_resp_array(keys_array, i);
-    
+
     // Cleanup
     free(keys_array);
     hash_table_iterator_destroy(iter);
-    
+
     return response;
 }
 
 char *handle_subscribe_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if (!server || !args || argc < 2 || !client) {
+    if (!server || !args || argc < 2 || !client)
+    {
         return strdup("-ERR invalid arguments\r\n");
     }
 
     char *channel_name = args[1];
     client_t *c = (client_t *)client;
-    
+
     redis_object_t *obj = hash_table_get(server->channels_map, channel_name);
-    if (obj == NULL) {
+    if (obj == NULL)
+    {
         obj = redis_object_create_channel(channel_name);
         hash_table_set(server->channels_map, channel_name, obj);
     }
-    channel_t * channel = obj->ptr;
-    
+    channel_t *channel = obj->ptr;
+
     redis_list_t *list = channel->clients;
-    
+
     list_node_t *node = list->head;
     int already_subscribed = 0;
-    while (node) {
+    while (node)
+    {
         client_t *cur = (client_t *)node->data;
-        if (cur == c) {
+        if (cur == c)
+        {
             already_subscribed = 1;
             break;
         }
         node = node->next;
     }
-    
+
     // Add client if not already subscribed
-    if (!already_subscribed) {
+    if (!already_subscribed)
+    {
         c->sub_mode = 1;
         c->subscribed_channels++;
         channel->n_clients++;
         list_rpush(list, c);
     }
-    
+
     int channel_len = strlen(channel_name);
-    int response_size = 64 + channel_len;  
+    int response_size = 64 + channel_len;
     char *response = malloc(response_size);
-    if (!response) {
+    if (!response)
+    {
         return strdup("-ERR out of memory\r\n");
     }
-    
-    snprintf(response, response_size, 
+
+    snprintf(response, response_size,
              "*3\r\n$9\r\nsubscribe\r\n$%d\r\n%s\r\n:%d\r\n",
              channel_len, channel_name, c->subscribed_channels);
-    
+
     return response;
 }
 
-static int is_pubsub_command(const char *command) {
-    for (int i = 0; pubsub_allowed_commands[i] != NULL; i++) {
-        if (strcmp(command, pubsub_allowed_commands[i]) == 0) {
-            return 1;  
+static int is_pubsub_command(const char *command)
+{
+    for (int i = 0; pubsub_allowed_commands[i] != NULL; i++)
+    {
+        if (strcmp(command, pubsub_allowed_commands[i]) == 0)
+        {
+            return 1;
         }
     }
-    return 0;  
+    return 0;
 }
 
 char *handle_publish_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if (!server || !args || argc < 3 || !client) {  
+    if (!server || !args || argc < 3 || !client)
+    {
         return strdup("-ERR invalid arguments\r\n");
     }
-    
+
     char *channel_name = args[1];
     char *message = args[2];
-    
+
     redis_object_t *obj = hash_table_get(server->channels_map, channel_name);
-    if (!obj) {
+    if (!obj)
+    {
         return encode_number("0");
     }
-    
+
     channel_t *channel = (channel_t *)obj->ptr;
-    if (!channel || !channel->clients || channel->clients->length == 0) {
+    if (!channel || !channel->clients || channel->clients->length == 0)
+    {
         return encode_number("0");
     }
-    
-    // Build the message to send to subscribers
+
     char **response_args = malloc(3 * sizeof(char *));
-    if (!response_args) {
+    if (!response_args)
+    {
         return strdup("-ERR out of memory\r\n");
     }
-    
+
     response_args[0] = strdup("message");
-    response_args[1] = strdup(channel_name);  
-    response_args[2] = strdup(message);       
-    
+    response_args[1] = strdup(channel_name);
+    response_args[2] = strdup(message);
+
     char *response = encode_resp_array(response_args, 3);
-    if (!response) {
+    if (!response)
+    {
         free(response_args[0]);
         free(response_args[1]);
         free(response_args[2]);
         free(response_args);
         return strdup("-ERR out of memory\r\n");
     }
-    
+
     int sent_count = 0;
     list_node_t *node = channel->clients->head;
-    while (node) {
+    while (node)
+    {
         client_t *cur = (client_t *)node->data;
-        if (cur && cur->fd > 0) {
+        if (cur && cur->fd > 0)
+        {
             ssize_t sent = send(cur->fd, response, strlen(response), MSG_DONTWAIT);
-            if (sent > 0) {
+            if (sent > 0)
+            {
                 sent_count++;
             }
         }
         node = node->next;
     }
-    
+
     free(response_args[0]);
     free(response_args[1]);
     free(response_args[2]);
     free(response_args);
     free(response);
-    
+
     char n_str[32];
     snprintf(n_str, sizeof(n_str), "%d", sent_count);
     return encode_number(n_str);
@@ -2119,102 +2114,114 @@ char *handle_publish_command(redis_server_t *server, char **args, int argc, void
 
 char *handle_unsubscribe_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if (!server || !args || argc < 2 || !client) { 
+    if (!server || !args || argc < 2 || !client)
+    {
         return strdup("-ERR invalid arguments\r\n");
     }
-    
+
     char *channel_name = args[1];
     client_t *c = (client_t *)client;
-    
+
     redis_object_t *obj = hash_table_get(server->channels_map, channel_name);
-    if (!obj) {
+    if (!obj)
+    {
         char *response_args[3];
         response_args[0] = "unsubscribe";
         response_args[1] = channel_name;
         char count_str[32];
         snprintf(count_str, sizeof(count_str), "%d", c->subscribed_channels);
         response_args[2] = count_str;
-        
+
         return encode_resp_array(response_args, 3);
     }
-    
+
     channel_t *channel = (channel_t *)obj->ptr;
-    if (channel && channel->clients) {
-        if (list_remove(channel->clients, c)) {
+    if (channel && channel->clients)
+    {
+        if (list_remove(channel->clients, c))
+        {
             c->subscribed_channels--;
             channel->n_clients--;
-            
-            if (c->subscribed_channels == 0) {
+
+            if (c->subscribed_channels == 0)
+            {
                 c->sub_mode = 0;
             }
-                        if (channel->n_clients == 0) {
+            if (channel->n_clients == 0)
+            {
                 hash_table_delete(server->channels_map, channel_name);
                 redis_object_destroy(obj);
             }
         }
     }
-    
+
     int channel_len = strlen(channel_name);
     int response_size = 128 + channel_len;
     char *response = malloc(response_size);
-    if (!response) {
+    if (!response)
+    {
         return strdup("-ERR out of memory\r\n");
     }
-    
+
     snprintf(response, response_size,
-        "*3\r\n$11\r\nunsubscribe\r\n$%d\r\n%s\r\n:%d\r\n",
-        channel_len, channel_name, c->subscribed_channels);
-    
+             "*3\r\n$11\r\nunsubscribe\r\n$%d\r\n%s\r\n:%d\r\n",
+             channel_len, channel_name, c->subscribed_channels);
+
     return response;
 }
 
 char *handle_zadd_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)client;
-    
-    if (argc < 4 || (argc - 2) % 2 != 0) {
+
+    if (argc < 4 || (argc - 2) % 2 != 0)
+    {
         return strdup("-ERR wrong number of arguments for 'zadd' command\r\n");
     }
-    
+
     char *key = args[1];
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
-    
-    // Create sorted set if it doesn't exist
-    if (!obj) {
+
+    if (!obj)
+    {
         obj = redis_object_create_sorted_set();
-        if (!obj) {
+        if (!obj)
+        {
             return strdup("-ERR out of memory\r\n");
         }
         hash_table_set(server->db->dict, strdup(key), obj);
-    } else if (obj->type != REDIS_SORTED_SET) {
+    }
+    else if (obj->type != REDIS_SORTED_SET)
+    {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
     }
-    
+
     redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
     int added_count = 0;
-    
-    // Process score-member pairs
-    for (int i = 2; i < argc; i += 2) {
+
+    for (int i = 2; i < argc; i += 2)
+    {
         char *score_str = args[i];
         char *member = args[i + 1];
-        
-        // Parse score
+
         char *endptr;
         double score = strtod(score_str, &endptr);
-        if (*endptr != '\0') {
+        if (*endptr != '\0')
+        {
             return strdup("-ERR value is not a valid float\r\n");
         }
-        
-        // Add to sorted set (returns 1 if new member, 0 if updated existing)
+
         int result = sorted_set_add(zset, member, score);
-        if (result == 1) {
+        if (result == 1)
+        {
             added_count++;
-        } else if (result == -1) {
+        }
+        else if (result == -1)
+        {
             return strdup("-ERR out of memory\r\n");
         }
     }
-    
-    // Return number of elements added (not updated)
+
     char response[32];
     sprintf(response, ":%d\r\n", added_count);
     return strdup(response);
@@ -2223,104 +2230,115 @@ char *handle_zadd_command(redis_server_t *server, char **args, int argc, void *c
 char *handle_zrange_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)client;
-    
-    if (argc < 4 || argc > 5) {
+
+    if (argc < 4 || argc > 5)
+    {
         return strdup("-ERR wrong number of arguments for 'zrange' command\r\n");
     }
-    
+
     char *key = args[1];
     int start = atoi(args[2]);
     int stop = atoi(args[3]);
     bool with_scores = false;
-    
-    // Check for WITHSCORES option
-    if (argc == 5) {
-        if (strcasecmp(args[4], "withscores") == 0) {
+
+    if (argc == 5)
+    {
+        if (strcasecmp(args[4], "withscores") == 0)
+        {
             with_scores = true;
-        } else {
+        }
+        else
+        {
             return strdup("-ERR syntax error\r\n");
         }
     }
-    
+
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
-    if (!obj) {
+    if (!obj)
+    {
         return strdup("*0\r\n");
     }
-    
-    if (obj->type != REDIS_SORTED_SET) {
+
+    if (obj->type != REDIS_SORTED_SET)
+    {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
     }
-    
+
     redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
-    
-    // Get range of elements
+
     sorted_set_member_t *members = NULL;
     int count = sorted_set_range(zset, start, stop, &members);
-    
-    if (count <= 0 || !members) {
+
+    if (count <= 0 || !members)
+    {
         return strdup("*0\r\n");
     }
-    
-    // Build response
+
     size_t response_size = 1024;
     char *response = malloc(response_size);
-    if (!response) {
+    if (!response)
+    {
         free(members);
         return strdup("-ERR out of memory\r\n");
     }
-    
+
     int pos = 0;
-    
-    if (with_scores) {
-        // Each member becomes 2 elements: member and score
+
+    if (with_scores)
+    {
         pos += sprintf(response + pos, "*%d\r\n", count * 2);
-        
-        for (int i = 0; i < count; i++) {
-            // Member
-            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
-                          strlen(members[i].member), members[i].member);
-            
-            // Score
+
+        for (int i = 0; i < count; i++)
+        {
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
+                           strlen(members[i].member), members[i].member);
+
             char score_str[32];
-            if (members[i].score == (long long)members[i].score) {
-                // Integer score
+            if (members[i].score == (long long)members[i].score)
+            {
                 sprintf(score_str, "%lld", (long long)members[i].score);
-            } else {
-                // Float score
+            }
+            else
+            {
                 sprintf(score_str, "%.17g", members[i].score);
             }
-            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
-                          strlen(score_str), score_str);
-            
-            // Reallocate if needed
-            if (pos > response_size - 200) {
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
+                           strlen(score_str), score_str);
+
+            if (pos > response_size - 200)
+            {
                 response_size *= 2;
                 response = realloc(response, response_size);
-                if (!response) {
-                    free(members);
-                    return strdup("-ERR out of memory\r\n");
-                }
-            }
-        }
-    } else {
-        pos += sprintf(response + pos, "*%d\r\n", count);
-        
-        for (int i = 0; i < count; i++) {
-            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
-                          strlen(members[i].member), members[i].member);
-            
-            // Reallocate if needed
-            if (pos > response_size - 200) {
-                response_size *= 2;
-                response = realloc(response, response_size);
-                if (!response) {
+                if (!response)
+                {
                     free(members);
                     return strdup("-ERR out of memory\r\n");
                 }
             }
         }
     }
-    
+    else
+    {
+        pos += sprintf(response + pos, "*%d\r\n", count);
+
+        for (int i = 0; i < count; i++)
+        {
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n",
+                           strlen(members[i].member), members[i].member);
+
+            if (pos > response_size - 200)
+            {
+                response_size *= 2;
+                response = realloc(response, response_size);
+                if (!response)
+                {
+                    free(members);
+                    return strdup("-ERR out of memory\r\n");
+                }
+            }
+        }
+    }
+
     free(members);
     return response;
 }
@@ -2328,39 +2346,44 @@ char *handle_zrange_command(redis_server_t *server, char **args, int argc, void 
 char *handle_zrem_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)client;
-    
-    if (argc < 3) {
+
+    if (argc < 3)
+    {
         return strdup("-ERR wrong number of arguments for 'zrem' command\r\n");
     }
-    
+
     char *key = args[1];
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
-    
-    if (!obj) {
+
+    if (!obj)
+    {
         return strdup(":0\r\n");
     }
-    
-    if (obj->type != REDIS_SORTED_SET) {
+
+    if (obj->type != REDIS_SORTED_SET)
+    {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
     }
-    
+
     redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
     int removed_count = 0;
-    
-    // Remove each member
-    for (int i = 2; i < argc; i++) {
+
+    for (int i = 2; i < argc; i++)
+    {
         char *member = args[i];
-        if (sorted_set_remove(zset, member) == 1) {
+        if (sorted_set_remove(zset, member) == 1)
+        {
             removed_count++;
         }
     }
-    
+
     // If sorted set is empty, remove the key from database
-    if (sorted_set_card(zset) == 0) {
+    if (sorted_set_card(zset) == 0)
+    {
         hash_table_delete(server->db->dict, key);
         redis_object_destroy(obj);
     }
-    
+
     char response[32];
     sprintf(response, ":%d\r\n", removed_count);
     return strdup(response);
@@ -2370,21 +2393,23 @@ char *handle_zcard_command(redis_server_t *server, char **args, int argc, void *
 {
     (void)client;
     (void)argc;
-    
+
     char *key = args[1];
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
-    
-    if (!obj) {
+
+    if (!obj)
+    {
         return strdup(":0\r\n");
     }
-    
-    if (obj->type != REDIS_SORTED_SET) {
+
+    if (obj->type != REDIS_SORTED_SET)
+    {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
     }
-    
+
     redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
     size_t cardinality = sorted_set_card(zset);
-    
+
     char response[32];
     sprintf(response, ":%zu\r\n", cardinality);
     return strdup(response);
@@ -2394,71 +2419,77 @@ char *handle_zscore_command(redis_server_t *server, char **args, int argc, void 
 {
     (void)client;
     (void)argc;
-    
+
     char *key = args[1];
     char *member = args[2];
-    
+
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
-    
-    if (!obj) {
-        return strdup("$-1\r\n");  // NULL bulk string
+
+    if (!obj)
+    {
+        return strdup("$-1\r\n");
     }
-    
-    if (obj->type != REDIS_SORTED_SET) {
+
+    if (obj->type != REDIS_SORTED_SET)
+    {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
     }
-    
+
     redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
     double score;
-    
-    if (sorted_set_score(zset, member, &score) == 0) {
-        return strdup("$-1\r\n");  // Member not found
+
+    if (sorted_set_score(zset, member, &score) == 0)
+    {
+        return strdup("$-1\r\n");
     }
-    
-    // Format score as string
+
     char score_str[32];
-    if (score == (long long)score) {
-        // Integer score
+    if (score == (long long)score)
+    {
         sprintf(score_str, "%lld", (long long)score);
-    } else {
-        // Float score
+    }
+    else
+    {
         sprintf(score_str, "%.17g", score);
     }
-    
+
     return encode_bulk_string(score_str);
 }
-
 
 char *handle_zrank_command(redis_server_t *server, char **args, int argc, void *client)
 {
     (void)client;
     (void)argc;
-    
+
     char *key = args[1];
     char *member = args[2];
-    
+
     redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
-    
-    if (!obj) {
-        return strdup("$-1\r\n");  
+
+    if (!obj)
+    {
+        return strdup("$-1\r\n");
     }
-    
-    if (obj->type != REDIS_SORTED_SET) {
+
+    if (obj->type != REDIS_SORTED_SET)
+    {
         return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
     }
-    
+
     redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
-    
+
     double score;
-    if (sorted_set_score(zset, member, &score) == 0) {
-        return strdup("$-1\r\n");  // Member not found
+    if (sorted_set_score(zset, member, &score) == 0)
+    {
+        return strdup("$-1\r\n");
     }
-    
+
     long long rank = sorted_set_rank(zset, member, score);
-    if (rank == -1) {
-        return strdup("$-1\r\n"); 
+    if (rank == -1)
+    {
+        return strdup("$-1\r\n");
     }
-    
+
     char response[32];
     sprintf(response, ":%lld\r\n", rank);
     return strdup(response);
