@@ -67,7 +67,8 @@ static redis_command_t commands[] = {
     {"zrange", handle_zrange_command, 4, 5},   
     {"zrem", handle_zrem_command, 3, -1},      
     {"zcard", handle_zcard_command, 2, 2},     
-    {"zscore", handle_zscore_command, 3, 3}, 
+    {"zscore", handle_zscore_command, 3, 3},
+    {"zrank", handle_zrank_command, 3, 3},
 
     {NULL, NULL, 0, 0} 
 };

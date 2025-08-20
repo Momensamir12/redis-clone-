@@ -52,6 +52,7 @@ char *handle_zrange_command(redis_server_t *server, char **args, int argc, void 
 char *handle_zrem_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_zcard_command(redis_server_t *server, char **args, int argc, void *client);
 char *handle_zscore_command(redis_server_t *server, char **args, int argc, void *client);
+char *handle_zrank_command(redis_server_t *server, char **args, int argc, void *client);
 void check_blocked_clients_timeout(redis_server_t *server);
 
 
