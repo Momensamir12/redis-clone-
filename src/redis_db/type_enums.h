@@ -9,7 +9,8 @@ typedef enum {
     REDIS_ZSET,
     REDIS_STREAM,
     REDIS_NUMBER,
-    REDIS_CHANNEL
+    REDIS_CHANNEL,
+    REDIS_SORTED_SET
 } redis_type_t;
 
 #endif

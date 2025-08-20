@@ -20,6 +20,7 @@
 #include "../rdb/rdb.h"
 #include "../rdb/io_buffer.h"
 #include "../channels/channel.h"
+#include "../lib/sorted_set.h"
 
 #define NULL_RESP_VALUE "$-1\r\n"
 #define PSYNC_RESPONSE_SIZE 1024
@@ -62,6 +63,11 @@ static redis_command_t commands[] = {
     {"subscribe", handle_subscribe_command, 2, 2},
     {"publish", handle_publish_command, 3, -1},
     {"unsubscribe", handle_unsubscribe_command, 2, -1},
+    {"zadd", handle_zadd_command, 4, -1},     
+    {"zrange", handle_zrange_command, 4, 5},   
+    {"zrem", handle_zrem_command, 3, -1},      
+    {"zcard", handle_zcard_command, 2, 2},     
+    {"zscore", handle_zscore_command, 3, 3}, 
 
     {NULL, NULL, 0, 0} 
 };
@@ -2159,4 +2165,264 @@ char *handle_unsubscribe_command(redis_server_t *server, char **args, int argc, 
         channel_len, channel_name, c->subscribed_channels);
     
     return response;
+}
+
+char *handle_zadd_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)client;
+    
+    if (argc < 4 || (argc - 2) % 2 != 0) {
+        return strdup("-ERR wrong number of arguments for 'zadd' command\r\n");
+    }
+    
+    char *key = args[1];
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    
+    // Create sorted set if it doesn't exist
+    if (!obj) {
+        obj = redis_object_create_sorted_set();
+        if (!obj) {
+            return strdup("-ERR out of memory\r\n");
+        }
+        hash_table_set(server->db->dict, strdup(key), obj);
+    } else if (obj->type != REDIS_SORTED_SET) {
+        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+    }
+    
+    redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
+    int added_count = 0;
+    
+    // Process score-member pairs
+    for (int i = 2; i < argc; i += 2) {
+        char *score_str = args[i];
+        char *member = args[i + 1];
+        
+        // Parse score
+        char *endptr;
+        double score = strtod(score_str, &endptr);
+        if (*endptr != '\0') {
+            return strdup("-ERR value is not a valid float\r\n");
+        }
+        
+        // Add to sorted set (returns 1 if new member, 0 if updated existing)
+        int result = sorted_set_add(zset, member, score);
+        if (result == 1) {
+            added_count++;
+        } else if (result == -1) {
+            return strdup("-ERR out of memory\r\n");
+        }
+    }
+    
+    // Return number of elements added (not updated)
+    char response[32];
+    sprintf(response, ":%d\r\n", added_count);
+    return strdup(response);
+}
+
+char *handle_zrange_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)client;
+    
+    if (argc < 4 || argc > 5) {
+        return strdup("-ERR wrong number of arguments for 'zrange' command\r\n");
+    }
+    
+    char *key = args[1];
+    int start = atoi(args[2]);
+    int stop = atoi(args[3]);
+    bool with_scores = false;
+    
+    // Check for WITHSCORES option
+    if (argc == 5) {
+        if (strcasecmp(args[4], "withscores") == 0) {
+            with_scores = true;
+        } else {
+            return strdup("-ERR syntax error\r\n");
+        }
+    }
+    
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    if (!obj) {
+        return strdup("*0\r\n");
+    }
+    
+    if (obj->type != REDIS_SORTED_SET) {
+        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+    }
+    
+    redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
+    
+    // Get range of elements
+    sorted_set_member_t *members = NULL;
+    int count = sorted_set_range(zset, start, stop, &members);
+    
+    if (count <= 0 || !members) {
+        return strdup("*0\r\n");
+    }
+    
+    // Build response
+    size_t response_size = 1024;
+    char *response = malloc(response_size);
+    if (!response) {
+        free(members);
+        return strdup("-ERR out of memory\r\n");
+    }
+    
+    int pos = 0;
+    
+    if (with_scores) {
+        // Each member becomes 2 elements: member and score
+        pos += sprintf(response + pos, "*%d\r\n", count * 2);
+        
+        for (int i = 0; i < count; i++) {
+            // Member
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
+                          strlen(members[i].member), members[i].member);
+            
+            // Score
+            char score_str[32];
+            if (members[i].score == (long long)members[i].score) {
+                // Integer score
+                sprintf(score_str, "%lld", (long long)members[i].score);
+            } else {
+                // Float score
+                sprintf(score_str, "%.17g", members[i].score);
+            }
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
+                          strlen(score_str), score_str);
+            
+            // Reallocate if needed
+            if (pos > response_size - 200) {
+                response_size *= 2;
+                response = realloc(response, response_size);
+                if (!response) {
+                    free(members);
+                    return strdup("-ERR out of memory\r\n");
+                }
+            }
+        }
+    } else {
+        pos += sprintf(response + pos, "*%d\r\n", count);
+        
+        for (int i = 0; i < count; i++) {
+            pos += sprintf(response + pos, "$%zu\r\n%s\r\n", 
+                          strlen(members[i].member), members[i].member);
+            
+            // Reallocate if needed
+            if (pos > response_size - 200) {
+                response_size *= 2;
+                response = realloc(response, response_size);
+                if (!response) {
+                    free(members);
+                    return strdup("-ERR out of memory\r\n");
+                }
+            }
+        }
+    }
+    
+    free(members);
+    return response;
+}
+
+char *handle_zrem_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)client;
+    
+    if (argc < 3) {
+        return strdup("-ERR wrong number of arguments for 'zrem' command\r\n");
+    }
+    
+    char *key = args[1];
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    
+    if (!obj) {
+        return strdup(":0\r\n");
+    }
+    
+    if (obj->type != REDIS_SORTED_SET) {
+        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+    }
+    
+    redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
+    int removed_count = 0;
+    
+    // Remove each member
+    for (int i = 2; i < argc; i++) {
+        char *member = args[i];
+        if (sorted_set_remove(zset, member) == 1) {
+            removed_count++;
+        }
+    }
+    
+    // If sorted set is empty, remove the key from database
+    if (sorted_set_card(zset) == 0) {
+        hash_table_delete(server->db->dict, key);
+        redis_object_destroy(obj);
+    }
+    
+    char response[32];
+    sprintf(response, ":%d\r\n", removed_count);
+    return strdup(response);
+}
+
+char *handle_zcard_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)client;
+    (void)argc;
+    
+    char *key = args[1];
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    
+    if (!obj) {
+        return strdup(":0\r\n");
+    }
+    
+    if (obj->type != REDIS_SORTED_SET) {
+        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+    }
+    
+    redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
+    size_t cardinality = sorted_set_card(zset);
+    
+    char response[32];
+    sprintf(response, ":%zu\r\n", cardinality);
+    return strdup(response);
+}
+
+char *handle_zscore_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)client;
+    (void)argc;
+    
+    char *key = args[1];
+    char *member = args[2];
+    
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    
+    if (!obj) {
+        return strdup("$-1\r\n");  // NULL bulk string
+    }
+    
+    if (obj->type != REDIS_SORTED_SET) {
+        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+    }
+    
+    redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
+    double score;
+    
+    if (sorted_set_score(zset, member, &score) == 0) {
+        return strdup("$-1\r\n");  // Member not found
+    }
+    
+    // Format score as string
+    char score_str[32];
+    if (score == (long long)score) {
+        // Integer score
+        sprintf(score_str, "%lld", (long long)score);
+    } else {
+        // Float score
+        sprintf(score_str, "%.17g", score);
+    }
+    
+    return encode_bulk_string(score_str);
 }

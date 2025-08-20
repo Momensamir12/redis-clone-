@@ -35,6 +35,7 @@ add_executable(redis
     src/rdb/io_buffer.c
     src/rdb/rdb.c
     src/channels/channel.c
+    src/lib/sorted_set.c
 )
 
 

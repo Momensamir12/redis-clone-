@@ -5,6 +5,7 @@
 #include "../lib/list.h"
 #include "../streams/redis_stream.h"
 #include "../channels/channel.h"
+#include "../lib/sorted_set.h"
 // Create a new Redis database
 redis_db_t *redis_db_create(int id) {
     redis_db_t *db = malloc(sizeof(redis_db_t));
@@ -148,7 +149,22 @@ const char *redis_type_to_string(redis_type_t type) {
     switch (type) {
         case REDIS_STRING: return "string";
         case REDIS_LIST: return "list";
-        case REDIS_STREAM: return "stream";  // Add this
+        case REDIS_STREAM: return "stream";
+        case REDIS_ZSET: return "zset";
+        case REDIS_CHANNEL: return "channel";
         default: return "unknown";
     }
+}
+
+redis_object_t *redis_object_create_sorted_set(void) {
+    redis_sorted_set_t *zset = redis_sorted_set_create();
+    if (!zset) return NULL;
+    
+    redis_object_t *obj = redis_object_create(REDIS_SORTED_SET, zset);
+    if (!obj) {
+        redis_sorted_set_destroy(zset);
+        return NULL;
+    }
+    
+    return obj;
 }
