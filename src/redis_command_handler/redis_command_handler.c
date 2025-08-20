@@ -2063,15 +2063,24 @@ char *handle_publish_command(redis_server_t *server, char **args, int argc, void
        return encode_number(strdup("0"));
     }
     list_node_t *node = clients->head;
+    char ** response_args = malloc(3 * sizeof(char *));
+    response_args[0] = strdup("message");
+    response_args[1] = channel_name;
+    response_args[2] = args[2];
+    char *response = encode_resp_array(response_args, 3);
     while(node)
     {
         client_t *cur = (client_t *)node->data;
         if(cur)
         {
-            send(cur->fd, args[2], strlen(args[2]), MSG_DONTWAIT);
+            send(cur->fd, response_args, strlen(args[2]), MSG_DONTWAIT);
         }
         node = node->next;
     }
+    free(response_args[0]);
+    free(response_args[1]);
+    free(response_args[2]);
+    free(response_args);
 
     char n_st[10];
     sprintf(n_st,"%d", channel->n_clients);
