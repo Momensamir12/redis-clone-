@@ -2049,17 +2049,15 @@ static int is_pubsub_command(const char *command) {
 
 char *handle_publish_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if (!server || !args || argc < 3 || !client) {  // Need at least 3 args: PUBLISH channel message
+    if (!server || !args || argc < 3 || !client) {  
         return strdup("-ERR invalid arguments\r\n");
     }
     
     char *channel_name = args[1];
     char *message = args[2];
     
-    // Get the channel object
     redis_object_t *obj = hash_table_get(server->channels_map, channel_name);
     if (!obj) {
-        // No subscribers for this channel
         return encode_number("0");
     }
     
@@ -2075,8 +2073,8 @@ char *handle_publish_command(redis_server_t *server, char **args, int argc, void
     }
     
     response_args[0] = strdup("message");
-    response_args[1] = strdup(channel_name);  // Make a copy
-    response_args[2] = strdup(message);       // Make a copy
+    response_args[1] = strdup(channel_name);  
+    response_args[2] = strdup(message);       
     
     char *response = encode_resp_array(response_args, 3);
     if (!response) {
@@ -2100,7 +2098,6 @@ char *handle_publish_command(redis_server_t *server, char **args, int argc, void
         node = node->next;
     }
     
-    // Clean up
     free(response_args[0]);
     free(response_args[1]);
     free(response_args[2]);
@@ -2111,4 +2108,55 @@ char *handle_publish_command(redis_server_t *server, char **args, int argc, void
     char n_str[32];
     snprintf(n_str, sizeof(n_str), "%d", sent_count);
     return encode_number(n_str);
+}
+
+char *handle_unsubscribe_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    if (!server || !args || argc < 2 || !client) { 
+        return strdup("-ERR invalid arguments\r\n");
+    }
+    
+    char *channel_name = args[1];
+    client_t *c = (client_t *)client;
+    
+    redis_object_t *obj = hash_table_get(server->channels_map, channel_name);
+    if (!obj) {
+        char *response_args[3];
+        response_args[0] = "unsubscribe";
+        response_args[1] = channel_name;
+        char count_str[32];
+        snprintf(count_str, sizeof(count_str), "%d", c->subscribed_channels);
+        response_args[2] = count_str;
+        
+        return encode_resp_array(response_args, 3);
+    }
+    
+    channel_t *channel = (channel_t *)obj->ptr;
+    if (channel && channel->clients) {
+        if (list_remove(channel->clients, c)) {
+            c->subscribed_channels--;
+            channel->n_clients--;
+            
+            if (c->subscribed_channels == 0) {
+                c->sub_mode = 0;
+            }
+                        if (channel->n_clients == 0) {
+                hash_table_remove(server->channels_map, channel_name);
+                redis_object_destroy(obj);
+            }
+        }
+    }
+    
+    int channel_len = strlen(channel_name);
+    int response_size = 128 + channel_len;
+    char *response = malloc(response_size);
+    if (!response) {
+        return strdup("-ERR out of memory\r\n");
+    }
+    
+    snprintf(response, response_size,
+        "*3\r\n$11\r\nunsubscribe\r\n$%d\r\n%s\r\n:%d\r\n",
+        channel_len, channel_name, c->subscribed_channels);
+    
+    return response;
 }
