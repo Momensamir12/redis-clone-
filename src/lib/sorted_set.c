@@ -358,3 +358,4 @@ long long sorted_set_rank(redis_sorted_set_t *zset, const char *member, double s
     }
     
     return -1; 
+}
