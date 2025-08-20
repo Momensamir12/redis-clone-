@@ -1995,11 +1995,12 @@ char *handle_subscribe_command(redis_server_t *server, char **args, int argc, vo
     char *channel_name = args[1];
     client_t *c = (client_t *)client;
     
-    channel_t *channel = hash_table_get(server->channels_map, channel_name);
-    if (channel == NULL) {
-        channel = redis_object_create_channel(channel_name);
-        hash_table_set(server->channels_map, channel_name, channel);
+    redis_object_t *obj = hash_table_get(server->channels_map, channel_name);
+    if (obj == NULL) {
+        obj = redis_object_create_channel(channel_name);
+        hash_table_set(server->channels_map, channel_name, obj);
     }
+    channel_t * channel = obj->ptr;
     
     redis_list_t *list = channel->clients;
     
