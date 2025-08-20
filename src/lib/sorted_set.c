@@ -338,3 +338,23 @@ int sorted_set_range(redis_sorted_set_t *zset, int start, int stop, sorted_set_m
     
     return count;
 }
+long long sorted_set_rank(redis_sorted_set_t *zset, const char *member, double score) {
+    if (!zset || !member) return -1;
+    
+    skip_list_node_t *current = zset->skiplist->header->forward[0];
+    long long rank = 0;
+    
+    while (current) {
+        int cmp = skiplist_compare(current->score, current->member, score, member);
+        
+        if (cmp == 0) {
+            return rank;
+        } else if (cmp < 0) {
+            rank++;
+            current = current->forward[0];
+        } else {
+            return -1;
+        }
+    }
+    
+    return -1; 

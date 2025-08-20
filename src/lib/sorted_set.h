@@ -56,5 +56,6 @@ void skiplist_destroy(skip_list_t *sl);
 skip_list_node_t *skiplist_insert(skip_list_t *sl, double score, const char *member);
 int skiplist_delete(skip_list_t *sl, double score, const char *member);
 skip_list_node_t *skiplist_find(skip_list_t *sl, double score, const char *member);
+long long sorted_set_rank(redis_sorted_set_t *zset, const char *member, double score);
 
 #endif // REDIS_SORTED_SET_H

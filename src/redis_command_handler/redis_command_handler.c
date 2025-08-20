@@ -2426,3 +2426,39 @@ char *handle_zscore_command(redis_server_t *server, char **args, int argc, void 
     
     return encode_bulk_string(score_str);
 }
+
+
+char *handle_zrank_command(redis_server_t *server, char **args, int argc, void *client)
+{
+    (void)client;
+    (void)argc;
+    
+    char *key = args[1];
+    char *member = args[2];
+    
+    redis_object_t *obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    
+    if (!obj) {
+        return strdup("$-1\r\n");  
+    }
+    
+    if (obj->type != REDIS_SORTED_SET) {
+        return strdup("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+    }
+    
+    redis_sorted_set_t *zset = (redis_sorted_set_t *)obj->ptr;
+    
+    double score;
+    if (sorted_set_score(zset, member, &score) == 0) {
+        return strdup("$-1\r\n");  // Member not found
+    }
+    
+    long long rank = sorted_set_rank(zset, member, score);
+    if (rank == -1) {
+        return strdup("$-1\r\n"); 
+    }
+    
+    char response[32];
+    sprintf(response, ":%lld\r\n", rank);
+    return strdup(response);
+}
