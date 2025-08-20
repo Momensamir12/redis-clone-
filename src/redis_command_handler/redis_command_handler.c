@@ -67,6 +67,7 @@ static redis_command_t commands[] = {
 
 static const char *pubsub_allowed_commands[] = {
     "subscribe",
+    "publish",
     "unsubscribe", 
     "psubscribe",
     "punsubscribe",
