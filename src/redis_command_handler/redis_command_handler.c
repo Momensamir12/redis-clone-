@@ -389,12 +389,13 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
 {
     (void)server;
     client_t *c = (client_t *)client;
-    
+    printf("PING COMMAND DEBUG \n");    
     if (c->sub_mode) {
         char **response_args = malloc(2 * sizeof(char *));  
         if (!response_args) {
             return strdup("-ERR out of memory\r\n");
         }
+            printf("PING COMMAND DEBUG 2\n");    
         
         response_args[0] = strdup("pong");
         response_args[1] = strdup("");  
@@ -406,11 +407,12 @@ char *handle_ping_command(redis_server_t *server, char **args, int argc, void *c
         
         return result;
     }
+        printf("PING COMMAND DEBUG 3\n");    
     
     if (argc == 2) {
-        return encode_bulk_string(args[1]);  // Echo the message
+        return encode_bulk_string(args[1]);  
     }
-    
+
     return encode_simple_string("PONG");
 }
 
