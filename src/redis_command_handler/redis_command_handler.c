@@ -2049,40 +2049,66 @@ static int is_pubsub_command(const char *command) {
 
 char *handle_publish_command(redis_server_t *server, char **args, int argc, void *client)
 {
-    if (!server || !args || argc < 2 || !client) {
+    if (!server || !args || argc < 3 || !client) {  // Need at least 3 args: PUBLISH channel message
         return strdup("-ERR invalid arguments\r\n");
     }
+    
     char *channel_name = args[1];
+    char *message = args[2];
+    
+    // Get the channel object
     redis_object_t *obj = hash_table_get(server->channels_map, channel_name);
-    channel_t *channel = obj->ptr;
-    client_t * c = (client_t *)(client);
-    redis_list_t *clients = channel->clients;
-    c->sub_mode = 1;
-    if(!channel || !clients || clients->length ==0)
-    {
-       return encode_number(strdup("0"));
+    if (!obj) {
+        // No subscribers for this channel
+        return encode_number("0");
     }
-    list_node_t *node = clients->head;
-    char ** response_args = malloc(3 * sizeof(char *));
+    
+    channel_t *channel = (channel_t *)obj->ptr;
+    if (!channel || !channel->clients || channel->clients->length == 0) {
+        return encode_number("0");
+    }
+    
+    // Build the message to send to subscribers
+    char **response_args = malloc(3 * sizeof(char *));
+    if (!response_args) {
+        return strdup("-ERR out of memory\r\n");
+    }
+    
     response_args[0] = strdup("message");
-    response_args[1] = channel_name;
-    response_args[2] = args[2];
+    response_args[1] = strdup(channel_name);  // Make a copy
+    response_args[2] = strdup(message);       // Make a copy
+    
     char *response = encode_resp_array(response_args, 3);
-    while(node)
-    {
+    if (!response) {
+        free(response_args[0]);
+        free(response_args[1]);
+        free(response_args[2]);
+        free(response_args);
+        return strdup("-ERR out of memory\r\n");
+    }
+    
+    int sent_count = 0;
+    list_node_t *node = channel->clients->head;
+    while (node) {
         client_t *cur = (client_t *)node->data;
-        if(cur)
-        {
-            send(cur->fd, response_args, strlen(args[2]), MSG_DONTWAIT);
+        if (cur && cur->fd > 0) {
+            ssize_t sent = send(cur->fd, response, strlen(response), MSG_DONTWAIT);
+            if (sent > 0) {
+                sent_count++;
+            }
         }
         node = node->next;
     }
+    
+    // Clean up
     free(response_args[0]);
     free(response_args[1]);
     free(response_args[2]);
     free(response_args);
-
-    char n_st[10];
-    sprintf(n_st,"%d", channel->n_clients);
-    return encode_number(n_st);
+    free(response);
+    
+    // Return the number of clients that received the message
+    char n_str[32];
+    snprintf(n_str, sizeof(n_str), "%d", sent_count);
+    return encode_number(n_str);
 }
