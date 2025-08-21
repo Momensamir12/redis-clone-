@@ -783,17 +783,11 @@ void check_blocked_clients_timeout(redis_server_t *server)
     long long now_ms = get_current_time_ms();
     list_node_t *node = server->blocked_clients->head;
 
-    printf("Checking timeouts: current time=%lld ms, blocked clients=%zu\n",
-           now_ms, list_length(server->blocked_clients));
 
     while (node)
     {
         list_node_t *next = node->next;
         client_t *client = (client_t *)node->data;
-
-        // Both XREAD and BLPOP now use millisecond precision
-        printf("Client fd=%d: stream_block=%d, block_timeout_ms=%lld, current=%lld\n",
-               client->fd, client->stream_block, client->block_timeout_ms, now_ms);
 
         if (client->block_timeout_ms > 0 && client->block_timeout_ms <= now_ms)
         {
@@ -858,7 +852,6 @@ char *handle_type_command(redis_server_t *server, char **args, int argc, void *c
     redis_object_t *obj = (redis_object_t *)value;
     char *response = encode_simple_string(redis_type_to_string(obj->type));
 
-    free(value);
     return response;
 }
 
@@ -866,7 +859,6 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
 {
     client_t *c = (client_t *)(client);
 
-    // XADD key ID field value [field value ...]
     if (argc < 5 || (argc - 3) % 2 != 0)
     {
         return strdup("-ERR wrong number of arguments for 'xadd' command\r\n");
