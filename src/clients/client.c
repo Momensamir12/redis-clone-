@@ -6,20 +6,27 @@
 #include "client.h"
 #include <time.h>
 
+
 client_t *create_client(int fd)
 {
-    client_t *client = malloc(sizeof(client_t));
+    client_t *client = calloc(1, sizeof(client_t)); // Use calloc to initialize all fields to zero
     if(!client)
-      return NULL;
+        return NULL;
+    
     client->fd = fd;
     client->block_timeout = 0;
     client->is_blocked = 0;
     client->blocked_key = NULL;
     client->subscribed_channels = 0;
     client->sub_mode = 0;
+    client->transaction_commands = NULL; // Explicitly initialize
+    client->xread_streams = NULL;
+    client->xread_start_ids = NULL;
+    client->xread_num_streams = 0;
+    client->stream_block = false;
+    
     return client;
 }
-
 
 void add_client_to_list(redis_list_t *list, client_t *client) {
     if (!list || !client) return;
@@ -37,11 +44,38 @@ void free_client(client_t *client) {
     
     if (client->blocked_key) {
         free(client->blocked_key);
+        client->blocked_key = NULL;
     }
-    if(client->transaction_commands)
-      cleanup_transaction(client);
+    
+    if(client->transaction_commands) {
+        cleanup_transaction(client);
+    }
+    
+    if (client->xread_streams) {
+        for (int i = 0; i < client->xread_num_streams; i++) {
+            if (client->xread_streams[i]) {
+                free(client->xread_streams[i]);
+            }
+        }
+        free(client->xread_streams);
+        client->xread_streams = NULL;
+    }
+    
+    if (client->xread_start_ids) {
+        for (int i = 0; i < client->xread_num_streams; i++) {
+            if (client->xread_start_ids[i]) {
+                free(client->xread_start_ids[i]);
+            }
+        }
+        free(client->xread_start_ids);
+        client->xread_start_ids = NULL;
+    }
+    
+    client->xread_num_streams = 0;
+    
     free(client);
 }
+
 
 void client_block(client_t *client, const char *key, int timeout_timestamp)
 {

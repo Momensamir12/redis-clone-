@@ -24,6 +24,21 @@ void list_destroy(redis_list_t *list) {
     free(list);
 }
 
+void list_destroy_with_free(redis_list_t *list, void (*free_fn)(void *)) {
+    if (!list) return;
+
+    list_node_t *current = list->head;
+    while (current) {
+        list_node_t *next = current->next;
+        if (free_fn && current->data) {
+            free_fn(current->data);
+        }
+        free(current);
+        current = next;
+    }
+    free(list);
+}
+
 void list_lpush(redis_list_t *list, void *data) {
     list_node_t *node = malloc(sizeof(list_node_t));
     if (!node) return;

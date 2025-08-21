@@ -178,7 +178,7 @@ int main(int argc, char *argv[])
     g_server = redis_server_create(port);
     if (!g_server)
     {
-        fprintf(stderr, "Failed to create Redis server on port %d\n", port);
+    fprintf(stderr, "Failed to create Redis server on port %d: %s\n", port, strerror(errno));
         return 1;
     }
 

@@ -17,8 +17,9 @@ server_t* server_create (int port)
     server->port = port;
     server->fd = socket(AF_INET, SOCK_STREAM, 0);
     if(server->fd < 0){
-        free(server);
-        return NULL;
+    perror("socket");
+    free(server);
+    return NULL;
     }
     int reuse = 1;
     setsockopt(server->fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
@@ -27,8 +28,14 @@ server_t* server_create (int port)
     server->addr.sin_addr.s_addr = htonl(INADDR_ANY);
     
     // Bind and listen
-    if (bind(server->fd, (struct sockaddr*)&server->addr, sizeof(server->addr)) < 0 ||
-        listen(server->fd, 5) < 0) {
+    if (bind(server->fd, (struct sockaddr*)&server->addr, sizeof(server->addr)) < 0) {
+        perror("bind");
+        close(server->fd);
+        free(server);
+        return NULL;
+    }
+    if (listen(server->fd, 5) < 0) {
+        perror("listen");
         close(server->fd);
         free(server);
         return NULL;

@@ -26,10 +26,13 @@ typedef struct hash_table_iterator {
 
 
 hash_table_t *hash_table_create (size_t size);
-void hash_table_set (hash_table_t *ht, char *key, void *value);
+void hash_table_set (hash_table_t *ht, const char *key, void *value);
 void *hash_table_get(hash_table_t *ht, const char *key);
 void hash_table_delete(hash_table_t *ht, const char *key);
 void hash_table_destroy(hash_table_t *ht);
+
+// Destroy and free values using provided callback before freeing the table
+void hash_table_destroy_with_free(hash_table_t *ht, void (*free_value)(void *));
 hash_table_iterator_t *hash_table_iterator_create(hash_table_t *ht);
 int hash_table_iterator_next(hash_table_iterator_t *iter, char **key, void **value);
 void hash_table_iterator_destroy(hash_table_iterator_t *iter);

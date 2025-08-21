@@ -83,6 +83,7 @@ void skiplist_destroy(skip_list_t *sl) {
     
     skiplist_node_destroy(sl->header);
     free(sl);
+
 }
 
 
@@ -208,7 +209,16 @@ void redis_sorted_set_destroy(redis_sorted_set_t *zset) {
     if (!zset) return;
     
     skiplist_destroy(zset->skiplist);
-    hash_table_destroy(zset->dict);
+    // Free values stored in dict (doubles allocated by sorted_set_add)
+    if (zset->dict) {
+        hash_table_iterator_t *it = hash_table_iterator_create(zset->dict);
+        char *k = NULL; void *v = NULL;
+        while (it && hash_table_iterator_next(it, &k, &v)) {
+            free(v); // free allocated double
+        }
+        if (it) hash_table_iterator_destroy(it);
+        hash_table_destroy(zset->dict);
+    }
     free(zset);
 }
 
@@ -235,7 +245,8 @@ int sorted_set_add(redis_sorted_set_t *zset, const char *member, double score) {
     }
     *score_ptr = score;
     
-    hash_table_set(zset->dict, strdup(member), score_ptr);
+    /* hash_table_set will duplicate the key internally */
+    hash_table_set(zset->dict, member, score_ptr);
     
     return is_new ? 1 : 0; 
 }

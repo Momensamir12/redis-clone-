@@ -150,19 +150,21 @@ static char **parse_command_args(resp_buffer_t *resp_buffer, int *argc)
 
 static void free_command_args(char **args, int argc)
 {
-    if (!args)
-        return;
+    if (!args) return;
+    
     for (int i = 0; i < argc; i++)
     {
-        if (args[i])
+        if (args[i]) {
             free(args[i]);
+            args[i] = NULL;
+        }
     }
     free(args);
 }
 
 char *handle_command(redis_server_t *server, char *buffer, void *client)
 {
-    if (!server || !buffer)
+     if (!server || !buffer)
         return NULL;
 
     client_t *c = (client_t *)client;
@@ -242,6 +244,7 @@ char *handle_command(redis_server_t *server, char *buffer, void *client)
     free(cmd_lower);
     free_command_args(args, argc);
     free(resp_buffer);
+    
     return response;
 }
 // For BLPOP - timeout is in seconds (can be fractional)
@@ -448,19 +451,30 @@ char *handle_set_command(redis_server_t *server, char **args, int argc, void *cl
             return strdup("-ERR syntax error\r\n");
         }
     }
+
+    // Check if key already exists and free it
+    redis_object_t *existing_obj = (redis_object_t *)hash_table_get(server->db->dict, key);
+    if (existing_obj) {
+        redis_object_destroy(existing_obj);
+    }
+
     redis_object_t *obj;
     if (isInteger(value))
         obj = redis_object_create_number(value);
-
     else
         obj = redis_object_create_string(value);
+
+    if (!obj) {
+        return strdup("-ERR out of memory\r\n");
+    }
 
     if (expiry_ms)
     {
         set_expiry_ms(obj, atoi(expiry_ms));
     }
 
-    hash_table_set(server->db->dict, strdup(key), obj);
+    /* hash_table_set duplicates key internally; no need to strdup here */
+    hash_table_set(server->db->dict, key, obj);
     return encode_simple_string("OK");
 }
 
@@ -500,7 +514,8 @@ char *handle_rpush_command(redis_server_t *server, char **args, int argc, void *
     if (!obj)
     {
         obj = redis_object_create_list();
-        hash_table_set(server->db->dict, strdup(key), obj);
+        /* hash_table_set duplicates the key internally, pass the original */
+        hash_table_set(server->db->dict, key, obj);
     }
     else if (obj->type != REDIS_LIST)
     {
@@ -534,7 +549,7 @@ char *handle_lpush_command(redis_server_t *server, char **args, int argc, void *
     if (!obj)
     {
         obj = redis_object_create_list();
-        hash_table_set(server->db->dict, strdup(key), obj);
+        hash_table_set(server->db->dict, key, obj);
     }
     else if (obj->type != REDIS_LIST)
     {
@@ -908,7 +923,7 @@ char *handle_xadd_command(redis_server_t *server, char **args, int argc, void *c
             return strdup("-ERR failed to create stream object\r\n");
         }
 
-        hash_table_set(server->db->dict, strdup(key), obj);
+    hash_table_set(server->db->dict, key, obj);
     }
     else
     {
@@ -1305,8 +1320,8 @@ char *handle_incr_command(redis_server_t *server, char **args, int argc, void *c
     if (!obj)
     {
         obj = redis_object_create_number("1");
-        hash_table_set(server->db->dict, strdup(key), obj);
-        return encode_number(strdup("1"));
+        hash_table_set(server->db->dict, key, obj);
+        return encode_number("1");
     }
 
     if (obj->type != REDIS_NUMBER)
@@ -1322,10 +1337,10 @@ char *handle_incr_command(redis_server_t *server, char **args, int argc, void *c
     char new_value[32];
     snprintf(new_value, sizeof(new_value), "%lld", num);
 
-    free(obj->ptr);               
-    obj->ptr = strdup(new_value); 
+    free(obj->ptr);
+    obj->ptr = strdup(new_value);
 
-    return encode_number(strdup(new_value));
+    return encode_number(new_value);
 }
 
 char *handle_multi_command(redis_server_t *server, char **args, int argc, void *client)
@@ -2181,7 +2196,8 @@ char *handle_zadd_command(redis_server_t *server, char **args, int argc, void *c
         {
             return strdup("-ERR out of memory\r\n");
         }
-        hash_table_set(server->db->dict, strdup(key), obj);
+    /* hash_table_set duplicates the key internally */
+    hash_table_set(server->db->dict, key, obj);
     }
     else if (obj->type != REDIS_SORTED_SET)
     {

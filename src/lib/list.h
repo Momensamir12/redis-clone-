@@ -21,6 +21,7 @@ typedef struct redis_list {
 // Create/destroy
 redis_list_t *list_create(void);
 void list_destroy(redis_list_t *list);
+void list_destroy_with_free(redis_list_t *list, void (*free_fn)(void *));
 
 // Redis operations
 void list_lpush(redis_list_t *list, void *data);  // Add to left/head

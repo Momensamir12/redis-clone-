@@ -256,7 +256,7 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                 event_loop_remove_fd(loop, fd);
                 close(fd);
                 free_client(client);
-                break;
+                return;
             } else {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     break;
@@ -270,7 +270,7 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
                     event_loop_remove_fd(loop, fd);
                     close(fd);
                     free_client(client);
-                    break;
+                    return;
                 }
             }
         }
@@ -281,10 +281,11 @@ static void handle_client_data(event_loop_t *loop, int fd, uint32_t events, void
         if (client->is_blocked) {
             remove_client_from_list(redis->blocked_clients, client);
         }
-        remove_client_from_list(redis->clients, client);
-        event_loop_remove_fd(loop, fd);
-        close(fd);
-        free_client(client);
+    remove_client_from_list(redis->clients, client);
+    event_loop_remove_fd(loop, fd);
+    close(fd);
+    free_client(client);
+    return;
     }
 }
 

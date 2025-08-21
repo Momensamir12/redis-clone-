@@ -7,7 +7,7 @@
 #include "../channels/channel.h"
 #include "../lib/sorted_set.h"
 redis_db_t *redis_db_create(int id) {
-    redis_db_t *db = malloc(sizeof(redis_db_t));
+    redis_db_t *db = calloc(1, sizeof(redis_db_t));
     if (!db) {
         return NULL;
     }
@@ -34,20 +34,11 @@ void redis_db_destroy(redis_db_t *db) {
     if (!db) return;
     
     if (db->dict) {
-        for (size_t i = 0; i < db->dict->size; i++) {
-            hash_entry_t *entry = db->dict->buckets[i];
-            while (entry) {
-                redis_object_t *obj = (redis_object_t *)entry->value;
-                redis_object_destroy(obj);
-                entry = entry->next;
-            }
-        }
-        
-        hash_table_destroy(db->dict);
+        // Destroy values (redis_object_t) stored in dict then destroy the table
+        hash_table_destroy_with_free(db->dict, (void (*)(void *))redis_object_destroy);
     }
     
     if (db->expires) {
-
         hash_table_destroy(db->expires);
     }
     
@@ -55,15 +46,16 @@ void redis_db_destroy(redis_db_t *db) {
 }
 
 redis_object_t *redis_object_create(redis_type_t type, void *ptr) {
-    redis_object_t *obj = malloc(sizeof(redis_object_t));
+    redis_object_t *obj = calloc(1, sizeof(redis_object_t));
     if (!obj) {
         return NULL;
     }
-    
+
     obj->type = type;
     obj->ptr = ptr;
-    obj->refcount = 1;  
-    
+    obj->refcount = 1;
+    obj->expiry = -1; /* default: no expiry */
+
     return obj;
 }
 redis_object_t *redis_object_create_string(const char *value) {
@@ -121,7 +113,8 @@ void redis_object_destroy(redis_object_t *obj) {
             free(obj->ptr);
             break;
         case REDIS_LIST:
-            list_destroy((redis_list_t *)obj->ptr);
+            // List nodes may contain heap-allocated strings/objects; free them too
+            list_destroy_with_free((redis_list_t *)obj->ptr, free);
             break;
         case REDIS_STREAM:
             redis_stream_destroy((redis_stream_t *)obj->ptr);
