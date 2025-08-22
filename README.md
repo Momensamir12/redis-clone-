@@ -42,13 +42,9 @@ cd Redis-Clone-
 
 ## Run & Test locally
 
-Use the included `run.sh` to build and start the server locally (it runs on
-port 6379 by default):
-
 ```sh
 ./run.sh
 ```
-
 
 ```sh
 redis-cli -p 6379 PING
