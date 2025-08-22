@@ -34,6 +34,11 @@ Command set tested: `PING`, `SET`, `GET`, `INCR`, `LPUSH`, `RPUSH`, `LPOP`, `RPO
 - GCC or Clang
 - Linux 
 - `make`
+- 
+### Clone the repository
+```sh
+git clone https://github.com/Momensamir12/Redis-Clone-.git
+cd Redis-Clone-
 
 ## Run & Test locally
 
