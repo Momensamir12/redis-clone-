@@ -54,7 +54,7 @@ redis_object_t *redis_object_create(redis_type_t type, void *ptr) {
     obj->type = type;
     obj->ptr = ptr;
     obj->refcount = 1;
-    obj->expiry = -1; /* default: no expiry */
+    obj->expiry = 0; /* default: no expiry */
 
     return obj;
 }
