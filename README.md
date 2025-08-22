@@ -38,5 +38,5 @@ Command set tested: `PING`, `SET`, `GET`, `INCR`, `LPUSH`, `RPUSH`, `LPOP`, `RPO
 ### Build
 ```bash
 ./your_program.sh
-
+---
 runs on port 6379 by default, handles resp encoded requests only  
