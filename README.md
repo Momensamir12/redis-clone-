@@ -5,7 +5,7 @@ Implements core Redis data structures, commands, persistence, and replication wh
 
 ---
 
-## 🚀 Features
+##  Features
 
 - **Event-driven architecture** using `epoll` for scalable, non-blocking I/O.
 - **Core data structures & commands**: Strings, Lists, Sets, Sorted Sets.
@@ -17,7 +17,7 @@ Implements core Redis data structures, commands, persistence, and replication wh
 
 ---
 
-## 📊 Benchmarks
+##  Benchmarks
 
 Tested with the official `redis-benchmark` tool:  
 
@@ -28,7 +28,7 @@ Command set tested: `PING`, `SET`, `GET`, `INCR`, `LPUSH`, `RPUSH`, `LPOP`, `RPO
 
 ---
 
-## 📦 Getting Started
+##  Getting Started
 
 ### Prerequisites
 - GCC or Clang
