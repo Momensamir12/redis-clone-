@@ -55,9 +55,7 @@ redis-cli -p 6379 GET mykey
 or if you don't have redis installed 
 
 ```sh
-# GNU netcat
 printf '*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$5\r\nhello\r\n' | nc -q 1 127.0.0.1 6379
-# OpenBSD netcat
 printf '*2\r\n$3\r\nGET\r\n$5\r\nmykey\r\n' | nc -N 127.0.0.1 6379
 ```
 
