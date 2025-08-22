@@ -35,8 +35,28 @@ Command set tested: `PING`, `SET`, `GET`, `INCR`, `LPUSH`, `RPUSH`, `LPOP`, `RPO
 - Linux 
 - `make`
 
-### Build
-```bash
-./your_program.sh
----
-runs on port 6379 by default, handles resp encoded requests only  
+## Run & Test locally
+
+Use the included `run.sh` to build and start the server locally (it runs on
+port 6379 by default):
+
+```sh
+./run.sh
+```
+
+Quick checks using `redis-cli`:
+
+```sh
+redis-cli -p 6379 PING
+redis-cli -p 6379 SET mykey hello
+redis-cli -p 6379 GET mykey
+```
+or if you don't have redis installed 
+
+```sh
+# GNU netcat
+printf '*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$5\r\nhello\r\n' | nc -q 1 127.0.0.1 6379
+# OpenBSD netcat
+printf '*2\r\n$3\r\nGET\r\n$5\r\nmykey\r\n' | nc -N 127.0.0.1 6379
+```
+
