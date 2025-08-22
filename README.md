@@ -44,7 +44,6 @@ port 6379 by default):
 ./run.sh
 ```
 
-Quick checks using `redis-cli`:
 
 ```sh
 redis-cli -p 6379 PING
