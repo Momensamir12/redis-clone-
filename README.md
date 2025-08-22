@@ -39,13 +39,13 @@ Command set tested: `PING`, `SET`, `GET`, `INCR`, `LPUSH`, `RPUSH`, `LPOP`, `RPO
 ```sh
 git clone https://github.com/Momensamir12/Redis-Clone-.git
 cd Redis-Clone-
-
-## Run & Test locally
+---
+### Run & Test locally
 
 ```sh
 ./run.sh
 ```
-
+open another terminal and run 
 ```sh
 redis-cli -p 6379 PING
 redis-cli -p 6379 SET mykey hello
