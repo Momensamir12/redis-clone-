@@ -11,9 +11,9 @@ Implements core Redis data structures, commands, persistence, and replication wh
 - **Core data structures & commands**: Strings, Lists, Streams, Sorted Sets.
 - **Blocking operations**: `BLPOP`, `XREAD` with millisecond-precision timeouts.
 - **Redis Streams** with radix tree indexing for efficient range queries.
-- **Transactions**: Full support for `MULTI` / `EXEC` / `DISCARD` with atomic execution.
-- **Persistence**: RDB-like snapshotting format to save the database to disk.
-- **Replication**: Basic master-replica synchronization and command propagation.
+- **Transactions**: support for `MULTI` / `EXEC` / `DISCARD` with atomic execution.
+- **Persistence**: basic RDB binary format to snapshot the database and save it to disk.
+- **Replication**: basic master-replica synchronization and command propagation.
 
 ---
 
