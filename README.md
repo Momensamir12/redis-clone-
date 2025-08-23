@@ -8,7 +8,7 @@ Implements core Redis data structures, commands, persistence, and replication wh
 ##  Features
 
 - **Event-driven architecture** using `epoll` for scalable, non-blocking I/O.
-- **Core data structures & commands**: Strings, Lists, Sets, Sorted Sets.
+- **Core data structures & commands**: Strings, Lists, Streams, Sorted Sets.
 - **Blocking operations**: `BLPOP`, `XREAD` with millisecond-precision timeouts.
 - **Redis Streams** with radix tree indexing for efficient range queries.
 - **Transactions**: Full support for `MULTI` / `EXEC` / `DISCARD` with atomic execution.
